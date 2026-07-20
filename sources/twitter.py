@@ -292,26 +292,49 @@ class TwitterXSource(Source):
     def _browser_candidates():
         local = os.environ.get("LOCALAPPDATA") or ""
         roaming = os.environ.get("APPDATA") or ""
+        xdg_config = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+            os.path.expanduser("~"), ".config")
+        xdg_local = os.environ.get("XDG_DATA_HOME") or os.path.join(
+            os.path.expanduser("~"), ".local", "share")
         candidates = (
-            ("edge", os.path.join(local, "Microsoft", "Edge", "User Data")),
-            ("chrome", os.path.join(local, "Google", "Chrome", "User Data")),
-            ("brave", os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data")),
-            ("chromium", os.path.join(local, "Chromium", "User Data")),
-            ("firefox", os.path.join(roaming, "Mozilla", "Firefox", "Profiles")),
+            ("edge", os.path.join(local, "Microsoft", "Edge", "User Data"),
+             os.path.join(xdg_config, "microsoft-edge")),
+            ("chrome", os.path.join(local, "Google", "Chrome", "User Data"),
+             os.path.join(xdg_config, "google-chrome")),
+            ("brave", os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data"),
+             os.path.join(xdg_config, "BraveSoftware", "Brave-Browser")),
+            ("chromium", os.path.join(local, "Chromium", "User Data"),
+             os.path.join(xdg_config, "chromium"),
+             os.path.join(xdg_local, "chromium")),
+            ("firefox", os.path.join(roaming, "Mozilla", "Firefox", "Profiles"),
+             os.path.join(os.path.expanduser("~"), ".mozilla", "firefox")),
         )
-        return [name for name, path in candidates if path and os.path.isdir(path)]
+        return [name for name, *paths in candidates
+                if any(path and os.path.isdir(path) for path in paths)]
 
     @staticmethod
     def _browser_profile_candidates(selected=None):
         local = os.environ.get("LOCALAPPDATA") or ""
         roaming = os.environ.get("APPDATA") or ""
-        roots = {
-            "chrome": os.path.join(local, "Google", "Chrome", "User Data"),
-            "edge": os.path.join(local, "Microsoft", "Edge", "User Data"),
-            "brave": os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data"),
-            "chromium": os.path.join(local, "Chromium", "User Data"),
-            "firefox": os.path.join(roaming, "Mozilla", "Firefox", "Profiles"),
+        xdg_config = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+            os.path.expanduser("~"), ".config")
+        candidates = {
+            "chrome": (os.path.join(local, "Google", "Chrome", "User Data"),
+                       os.path.join(xdg_config, "google-chrome")),
+            "edge": (os.path.join(local, "Microsoft", "Edge", "User Data"),
+                     os.path.join(xdg_config, "microsoft-edge")),
+            "brave": (os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data"),
+                      os.path.join(xdg_config, "BraveSoftware", "Brave-Browser")),
+            "chromium": (os.path.join(local, "Chromium", "User Data"),
+                         os.path.join(xdg_config, "chromium")),
+            "firefox": (os.path.join(roaming, "Mozilla", "Firefox", "Profiles"),
+                        os.path.join(os.path.expanduser("~"), ".mozilla", "firefox")),
         }
+        roots = {}
+        for browser, paths in candidates.items():
+            found = next((p for p in paths if p and os.path.isdir(p)), "")
+            if found:
+                roots[browser] = found
         names = [selected] if selected and selected != "auto" else list(roots)
         result = []
         for browser in names:

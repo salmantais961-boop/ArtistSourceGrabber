@@ -127,6 +127,16 @@ class GelbooruLikeSource(Source):
         # 用户输入名称即可,无需数字 ID
         return raw.replace(" ", "_")
 
+    @staticmethod
+    def _build_search(artist_key, cfg):
+        if cfg.get("query_type") == "artist":
+            search = "artist:%s" % artist_key
+        else:
+            search = artist_key
+        if cfg.get("rating"):
+            search += " rating:%s" % cfg["rating"]
+        return search
+
     def search_artists(self, query, cfg, limit=10):
         if not query:
             return []
@@ -190,9 +200,7 @@ class GelbooruLikeSource(Source):
         return []
 
     def count_posts(self, artist_key, cfg):
-        search = "artist:%s" % artist_key
-        if cfg.get("rating"):
-            search += " rating:%s" % cfg["rating"]
+        search = self._build_search(artist_key, cfg)
         try:
             data = self._api("post", "index", 0, search, cfg, limit=1)
         except Exception:
@@ -207,9 +215,7 @@ class GelbooruLikeSource(Source):
         return -1
 
     def list_posts(self, artist_key, page, cfg):
-        search = "artist:%s" % artist_key
-        if cfg.get("rating"):
-            search += " rating:%s" % cfg["rating"]
+        search = self._build_search(artist_key, cfg)
         data = self._api("post", "index", page - 1, search, cfg, limit=PAGE_LIMIT)
         out = []
         for item in self._post_items(data):

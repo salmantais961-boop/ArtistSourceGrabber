@@ -18,6 +18,7 @@ import json
 import math
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
@@ -59,7 +60,11 @@ class XBrowserSession:
     def __init__(
             self, profile_dir: str = "", browser: str = "chrome",
             executable: str = "", timeout: float = DEFAULT_TIMEOUT):
-        local = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+        if os.name == "nt":
+            local = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+        else:
+            local = os.environ.get("XDG_DATA_HOME") or os.path.join(
+                os.path.expanduser("~"), ".local", "share")
         app_dir = os.path.join(local, "DanbooruGrabber")
         self.profile_dir = os.path.abspath(os.path.expanduser(
             profile_dir or os.path.join(app_dir, "XBrowserProfile")))
@@ -421,32 +426,42 @@ def _find_browser_executable(browser: str) -> str:
     local = os.environ.get("LOCALAPPDATA") or ""
     program_files = os.environ.get("PROGRAMFILES") or ""
     program_files_x86 = os.environ.get("PROGRAMFILES(X86)") or ""
+    linux_chrome = shutil.which("google-chrome-stable") or shutil.which("google-chrome") or ""
+    linux_chromium = shutil.which("chromium-browser") or shutil.which("chromium") or ""
     candidates = {
         "chrome": (
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/google-chrome",
+            "/opt/google/chrome/chrome",
             os.path.join(program_files, "Google", "Chrome", "Application", "chrome.exe"),
             os.path.join(program_files_x86, "Google", "Chrome", "Application", "chrome.exe"),
             os.path.join(local, "Google", "Chrome", "Application", "chrome.exe"),
-            shutil.which("chrome") or "",
+            linux_chrome or shutil.which("chrome") or "",
         ),
         "edge": (
+            "/usr/bin/microsoft-edge-stable",
+            "/usr/bin/microsoft-edge",
             os.path.join(program_files_x86, "Microsoft", "Edge", "Application", "msedge.exe"),
             os.path.join(program_files, "Microsoft", "Edge", "Application", "msedge.exe"),
             os.path.join(local, "Microsoft", "Edge", "Application", "msedge.exe"),
-            shutil.which("msedge") or "",
+            shutil.which("microsoft-edge") or shutil.which("msedge") or "",
         ),
         "brave": (
+            "/usr/bin/brave-browser",
             os.path.join(program_files, "BraveSoftware", "Brave-Browser", "Application",
                          "brave.exe"),
             os.path.join(program_files_x86, "BraveSoftware", "Brave-Browser", "Application",
                          "brave.exe"),
             os.path.join(local, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
-            shutil.which("brave") or "",
+            shutil.which("brave-browser") or shutil.which("brave") or "",
         ),
         "chromium": (
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chromium",
             os.path.join(program_files, "Chromium", "Application", "chrome.exe"),
             os.path.join(program_files_x86, "Chromium", "Application", "chrome.exe"),
             os.path.join(local, "Chromium", "Application", "chrome.exe"),
-            shutil.which("chromium") or "",
+            linux_chromium or "",
         ),
     }
     executable = next(
@@ -614,9 +629,13 @@ def _kill_process_tree(pid: int) -> None:
             pass
         return
     try:
-        os.kill(pid, 15)
-    except OSError:
-        pass
+        pgid = os.getpgid(pid)
+        os.killpg(pgid, signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
 
 
 def _validate_x_url(url: str) -> str:
