@@ -95,7 +95,11 @@ class DanbooruLikeSource(Source):
     def search_artists(self, query, cfg, limit=10):
         if not query:
             return []
-        query = query.strip().lstrip("@").strip()
+        if cfg.get("query_type") != "artist":
+            return self._search_tags(query, cfg, limit)
+        return self._search_artist_entries(query, cfg, limit)
+
+    def _search_artist_entries(self, query, cfg, limit):
         normalized_query = self._normalize_artist_name(query)
         variants = []
         for value in (query, query.replace(" ", "_"), query.replace("-", "_"),
@@ -192,6 +196,37 @@ class DanbooruLikeSource(Source):
         containment = min(len(query), len(candidate)) / max(len(query), len(candidate)) \
             if query in candidate or candidate in query else 0.0
         return max(containment, SequenceMatcher(None, query, candidate).ratio())
+
+    def _search_tags(self, query, cfg, limit):
+        query = query.strip().replace(" ", "_")
+        CATEGORY_LABELS = {"-1": "全部", "0": "通用", "1": "画师", "3": "版权", "4": "角色"}
+        try:
+            params = "search[name_matches]=*%s*&search[order]=count&limit=%d" % (
+                urllib.parse.quote(query, safe="*"), max(limit * 3, 30))
+            url = self.api_base + "/tags.json?" + params
+            if cfg.get("login") and cfg.get("api_key"):
+                url += "&login=%s&api_key=%s" % (
+                    urllib.parse.quote(cfg["login"]), urllib.parse.quote(cfg["api_key"]))
+            data = http_request(url, cfg.get("proxy"))
+        except Exception:
+            return []
+        if not isinstance(data, list):
+            return []
+        results = []
+        for t in data:
+            name = t.get("name", "")
+            category = str(t.get("category") or "")
+            results.append({
+                "id": name,
+                "name": name,
+                "site": self.id,
+                "profile_url": "%s/posts?tags=%s" % (self.api_base, urllib.parse.quote(name)),
+                "post_count": t.get("post_count"),
+                "other_names": "类型：%s" % CATEGORY_LABELS.get(category, category),
+                "is_banned": bool(t.get("is_deprecated")),
+            })
+        results.sort(key=lambda x: (-int(x.get("post_count") or 0), x.get("name", "")))
+        return results[:limit]
 
     # ---- 计数 ----
     def count_posts(self, artist_key, cfg):

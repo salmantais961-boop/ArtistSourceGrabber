@@ -51,8 +51,10 @@
       </details>
 
       <details class="config-section" open>
-        <summary><span class="step-number">02</span><span>确认同一画师</span><small>模糊匹配</small></summary>
+        <summary><span class="step-number">02</span><span>确认同一画师 / 角色 / 标签</span><small>模糊匹配</small></summary>
         <div class="section-body">
+          <label>搜索类型<select id="queryType"><option value="artist">画师</option><option value="character">角色</option><option value="tag">通用标签</option></select></label>
+          <p class="hint" id="queryTypeHint">以 Danbooru 画师记录确认同名身份，自动带出 X、Pixiv 等关联主页。</p>
           <label>Danbooru 画师名 / 别名 / 主页 URL<span class="search-row"><input id="artistQuery" type="text" placeholder="如 kantoku、Askzy 或 https://x.com/..." autocomplete="off"><button id="searchArtistBtn" class="secondary-btn" type="button">搜索</button></span></label>
           <p class="hint">优先用 Danbooru 画师记录确认同名身份，再自动带出 X、Pixiv 等关联主页。</p>
           <div id="artistCandidates" class="candidate-list hidden"></div>

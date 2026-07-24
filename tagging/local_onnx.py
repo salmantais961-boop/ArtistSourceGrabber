@@ -38,7 +38,7 @@ class LocalONNXTagger(Tagger):
             return "ONNX threshold 必须在 0 到 1 之间"
         if input_size <= 0:
             return "ONNX input_size 必须大于 0"
-        providers = body.get("providers") or ["CPUExecutionProvider"]
+        providers = body.get("providers") or ["CUDAExecutionProvider", "CPUExecutionProvider"]
         if isinstance(providers, str):
             providers = [item.strip() for item in providers.split(",") if item.strip()]
         categories = body.get("categories", ("0", "4"))

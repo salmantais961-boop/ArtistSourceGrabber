@@ -172,38 +172,66 @@ def _resolve_browser_paths(
     program_files = os.environ.get("PROGRAMFILES") or ""
     program_files_x86 = os.environ.get("PROGRAMFILES(X86)") or ""
 
+    if os.name == "nt":
+        data_home = local
+    else:
+        data_home = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+            os.path.expanduser("~"), ".config")
+
     roots = {
-        "chrome": os.path.join(local, "Google", "Chrome", "User Data"),
-        "edge": os.path.join(local, "Microsoft", "Edge", "User Data"),
-        "brave": os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data"),
-        "chromium": os.path.join(local, "Chromium", "User Data"),
+        "chrome": (
+            os.path.join(data_home, "google-chrome"),
+            os.path.join(local, "Google", "Chrome", "User Data"),
+        ),
+        "edge": (
+            os.path.join(data_home, "microsoft-edge"),
+            os.path.join(local, "Microsoft", "Edge", "User Data"),
+        ),
+        "brave": (
+            os.path.join(data_home, "BraveSoftware", "Brave-Browser"),
+            os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data"),
+        ),
+        "chromium": (
+            os.path.join(data_home, "chromium"),
+            os.path.join(local, "Chromium", "User Data"),
+        ),
     }
+    linux_chrome = shutil.which("google-chrome-stable") or shutil.which("google-chrome") or ""
+    linux_chromium = shutil.which("chromium-browser") or shutil.which("chromium") or ""
     candidates = {
         "chrome": (
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/google-chrome",
+            "/opt/google/chrome/chrome",
             os.path.join(program_files, "Google", "Chrome", "Application", "chrome.exe"),
             os.path.join(program_files_x86, "Google", "Chrome", "Application", "chrome.exe"),
             os.path.join(local, "Google", "Chrome", "Application", "chrome.exe"),
-            shutil.which("chrome") or "",
+            linux_chrome or shutil.which("chrome") or "",
         ),
         "edge": (
+            "/usr/bin/microsoft-edge-stable",
+            "/usr/bin/microsoft-edge",
             os.path.join(program_files_x86, "Microsoft", "Edge", "Application", "msedge.exe"),
             os.path.join(program_files, "Microsoft", "Edge", "Application", "msedge.exe"),
             os.path.join(local, "Microsoft", "Edge", "Application", "msedge.exe"),
-            shutil.which("msedge") or "",
+            shutil.which("microsoft-edge") or shutil.which("msedge") or "",
         ),
         "brave": (
+            "/usr/bin/brave-browser",
             os.path.join(program_files, "BraveSoftware", "Brave-Browser", "Application",
                          "brave.exe"),
             os.path.join(program_files_x86, "BraveSoftware", "Brave-Browser", "Application",
                          "brave.exe"),
             os.path.join(local, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
-            shutil.which("brave") or "",
+            shutil.which("brave-browser") or shutil.which("brave") or "",
         ),
         "chromium": (
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chromium",
             os.path.join(program_files, "Chromium", "Application", "chrome.exe"),
             os.path.join(program_files_x86, "Chromium", "Application", "chrome.exe"),
             os.path.join(local, "Chromium", "Application", "chrome.exe"),
-            shutil.which("chromium") or shutil.which("chrome") or "",
+            linux_chromium or shutil.which("chrome") or "",
         ),
     }
 
@@ -216,7 +244,10 @@ def _resolve_browser_paths(
         raise ChromeCookieError("未找到浏览器可执行文件", "executable_not_found")
 
     selected_root = (os.path.abspath(os.path.expanduser(user_data_dir))
-                     if user_data_dir else os.path.abspath(roots[name]))
+                     if user_data_dir else next(
+                         (os.path.abspath(path) for path in roots[name]
+                          if path and os.path.isdir(path)),
+                         ""))
     if not selected_root or not os.path.isdir(selected_root):
         raise ChromeCookieError("未找到浏览器 User Data 目录", "user_data_not_found")
     return _BrowserPaths(selected_executable, selected_root)

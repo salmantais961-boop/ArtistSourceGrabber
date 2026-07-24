@@ -692,6 +692,7 @@ def normalize_config(body):
     cfg["source"] = source_id
     cfg["canonical_artist"] = str(body.get("canonical_artist") or "").strip()
     cfg["canonical_artist_id"] = str(body.get("canonical_artist_id") or "").strip()
+    cfg["query_type"] = str(body.get("query_type") or "artist")
     tagger_cfg = normalize_tagger_config(body)
     if isinstance(tagger_cfg, str):
         return None, None, tagger_cfg
@@ -742,6 +743,7 @@ def normalize_task_configs(body):
                 "artist": str(merged.get("artist") or ""),
                 "canonical_artist": str(body.get("canonical_artist") or "").strip(),
                 "canonical_artist_id": str(body.get("canonical_artist_id") or "").strip(),
+                "query_type": str(body.get("query_type") or "artist"),
                 "count": int(body.get("count") or 0),
                 "tag_format": str(body.get("tag_format") or "comma"),
                 "tagger": tagger_cfg,
@@ -1100,6 +1102,7 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(cfg, str):
                 self.send_json({"ok": False, "error": cfg}, 400)
                 return
+            cfg["query_type"] = str(body.get("query_type") or "artist")
             try:
                 artists = source.search_artists(query, cfg, limit=12)
                 for artist in artists:

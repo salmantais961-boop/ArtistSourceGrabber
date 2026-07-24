@@ -65,7 +65,11 @@ class OpenverseSource(Source):
         return data
 
     def _params(self, creator, page, cfg, page_size=None):
-        params = {"creator": creator, "page": page, "page_size": page_size or self.PAGE_LIMIT}
+        params = {"page": page, "page_size": page_size or self.PAGE_LIMIT}
+        if cfg.get("query_type") == "artist":
+            params["creator"] = creator
+        else:
+            params["q"] = creator
         if cfg.get("openverse_license") != "all":
             params["license_type"] = cfg["openverse_license"]
         return params
