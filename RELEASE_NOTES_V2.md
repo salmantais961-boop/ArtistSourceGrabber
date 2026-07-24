@@ -10,7 +10,6 @@
 - 优化 LLM 证据优先提示词，降低幻觉、冲突和重复标签；
 - WD14 支持通用阈值、角色阈值和 CUDA 优先 / CPU 回退；
 - 合并 [buxinzi2233](https://github.com/buxinzi2233/ArtistSourceGrabber) 的 Linux 与角色/标签搜索贡献；
-- README 新增贡献致谢、功能导航和界面预览。
 
 下载文件：`ArtistSourceGrabber-V2.1.0.zip`
 
@@ -46,5 +45,5 @@
 `ArtistSourceGrabber-V2.1.0.zip`
 
 ```text
-SHA-256: AC222C06A79471A9316B61DE6E3787D4E8E15D8B582504BDDB14632F788E20E7
+SHA-256: 335FDF4575D6DAD16510C5117A76006C8188C9112FBDC8FB159578DC8AAA3921
 ```
