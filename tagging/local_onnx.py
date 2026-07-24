@@ -30,15 +30,24 @@ class LocalONNXTagger(Tagger):
         if not str(body.get("tags_path") or body.get("selected_tags_path") or "").strip():
             return "请填写 selected_tags.csv 路径"
         try:
-            threshold = float(body.get("threshold", 0.35))
+            general_value = body.get("general_threshold")
+            if general_value in (None, ""):
+                general_value = body.get("threshold", 0.35)
+            character_value = body.get("character_threshold")
+            if character_value in (None, ""):
+                character_value = 0.85
+            general_threshold = float(general_value)
+            character_threshold = float(character_value)
             input_size = int(body.get("input_size") or 448)
         except (TypeError, ValueError):
-            return "ONNX threshold/input_size 参数不合法"
-        if not 0 <= threshold <= 1:
-            return "ONNX threshold 必须在 0 到 1 之间"
+            return "ONNX 阈值或 input_size 参数不合法"
+        if not 0 <= general_threshold <= 1:
+            return "ONNX 通用标签阈值必须在 0 到 1 之间"
+        if not 0 <= character_threshold <= 1:
+            return "ONNX 角色标签阈值必须在 0 到 1 之间"
         if input_size <= 0:
             return "ONNX input_size 必须大于 0"
-        providers = body.get("providers") or ["CPUExecutionProvider"]
+        providers = body.get("providers") or ["CUDAExecutionProvider", "CPUExecutionProvider"]
         if isinstance(providers, str):
             providers = [item.strip() for item in providers.split(",") if item.strip()]
         categories = body.get("categories", ("0", "4"))
@@ -47,7 +56,11 @@ class LocalONNXTagger(Tagger):
         return {
             "model_path": model_path,
             "tags_path": tags_path,
-            "threshold": threshold,
+            # ``threshold`` is retained for callers using the old single-field
+            # config.  New inference code uses the two explicit values below.
+            "threshold": general_threshold,
+            "general_threshold": general_threshold,
+            "character_threshold": character_threshold,
             "input_size": input_size,
             "providers": list(providers) or ["CPUExecutionProvider"],
             "categories": {str(item) for item in categories},
@@ -88,7 +101,22 @@ class LocalONNXTagger(Tagger):
         if not os.path.isfile(tags_path):
             raise TaggingError("selected_tags.csv 不存在: %s" % tags_path)
         np, ort, Image = self._dependencies()
-        providers = tuple(cfg.get("providers") or ["CPUExecutionProvider"])
+        requested_providers = tuple(
+            cfg.get("providers") or ["CUDAExecutionProvider", "CPUExecutionProvider"])
+        try:
+            available_providers = tuple(ort.get_available_providers())
+        except Exception:
+            available_providers = ()
+        providers = tuple(
+            provider for provider in requested_providers
+            if not available_providers or provider in available_providers)
+        if not providers:
+            if "CPUExecutionProvider" in available_providers:
+                providers = ("CPUExecutionProvider",)
+            elif available_providers:
+                providers = (available_providers[0],)
+            else:
+                providers = requested_providers
         cache_key = (model_path, os.path.getmtime(model_path), tags_path,
                      os.path.getmtime(tags_path), providers)
         with _CACHE_LOCK:
@@ -127,11 +155,14 @@ class LocalONNXTagger(Tagger):
         if not outputs:
             raise TaggingError("ONNX 模型没有输出")
         scores_array = np.asarray(outputs[0]).reshape(-1)
-        threshold = float(cfg.get("threshold", 0.35))
+        general_threshold = float(
+            cfg.get("general_threshold", cfg.get("threshold", 0.35)))
+        character_threshold = float(cfg.get("character_threshold", 0.85))
         categories = {str(item) for item in cfg.get("categories", ("0", "4"))}
         matched = []
         for index, (name, category) in enumerate(labels[:len(scores_array)]):
             score = float(scores_array[index])
+            threshold = character_threshold if category == "4" else general_threshold
             if score >= threshold and (not categories or category in categories):
                 matched.append((name, score))
         matched.sort(key=lambda item: item[1], reverse=True)

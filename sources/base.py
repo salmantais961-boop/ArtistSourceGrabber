@@ -9,9 +9,39 @@
 - 列出作品 / 下载作品 / 构造同名 txt 标注
 """
 import os
+import re
 
 
 VIDEO_EXTS = {"mp4", "webm", "zip", "gif"}
+
+
+def split_search_tags(value, limit=50):
+    """Parse comma/space/newline separated booru tags with stable deduping."""
+
+    text = str(value or "").strip()
+    if not text:
+        return []
+    tags = []
+    seen = set()
+    for raw in re.split(r"[\s,，、;；]+", text):
+        tag = raw.strip().lstrip("#")
+        if not tag:
+            continue
+        tag = tag[:120]
+        key = tag.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        tags.append(tag)
+        if len(tags) >= limit:
+            break
+    return tags
+
+
+def normalize_search_tags(value, limit=50):
+    """Return a booru AND expression where tags are separated by spaces."""
+
+    return " ".join(split_search_tags(value, limit=limit))
 
 
 class SourceResult:

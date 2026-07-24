@@ -1,15 +1,15 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const els = {};
-for (const id of ["source","sourceChecklist","sourceDescription","sourceWarning","authFields","extraFields","xLegacySettings","xLegacyAuthFields","xLegacyExtraFields","pixivLegacySettings","pixivLegacyAuthFields","xSessionPanel","xCookieMode","openXSessionBtn","checkXSessionBtn","xSessionResult","xLegacyHint","pixivSessionPanel","pixivCookieMode","openPixivSessionBtn","checkPixivSessionBtn","pixivSessionResult","xOpenRow","openXBtn","xOpenResult","testSourceBtn","sourceTestResult","artistQuery","searchArtistBtn","artistCandidates","selectedArtist","sourceArtist","sourceArtistHint","canonicalArtist","canonicalArtistId","xUserId","count","rating","taggerType","tagMergeMode","llmFields","llmBaseUrl","llmApiKey","llmModel","llmPromptPreset","llmPrompt","onnxFields","onnxModelPath","onnxTagsPath","onnxThreshold","testTaggerBtn","taggerTestResult","includeArtist","includeMeta","skipVideo","proxy","startBtn","stopBtn","shutdownBtn","shutdownResult","statusPill","errorBox","identityLine","sourceStates","progressFill","progressText","statTotal","statDone","statSkipped","statFailed","folderLine","workspaceSubtitle","gallery","galleryCount","logBox","lightbox","lightboxMedia","lightboxTitle","lightboxMeta","lightboxOpen","lightboxPrev","lightboxNext","lightboxClose","tagDrawer","tagDrawerTitle","tagDrawerMeta","tagDrawerBody","tagDrawerClose","copyTagsBtn"]) els[id] = $(id);
+for (const id of ["source","sourceChecklist","sourceDescription","sourceWarning","authFields","extraFields","xLegacySettings","xLegacyAuthFields","xLegacyExtraFields","pixivLegacySettings","pixivLegacyAuthFields","xSessionPanel","xCookieMode","openXSessionBtn","checkXSessionBtn","xSessionResult","xLegacyHint","pixivSessionPanel","pixivCookieMode","openPixivSessionBtn","checkPixivSessionBtn","pixivSessionResult","xOpenRow","openXBtn","xOpenResult","testSourceBtn","sourceTestResult","artistQuery","searchArtistBtn","artistCandidates","selectedArtist","sourceArtist","sourceArtistHint","canonicalArtist","canonicalArtistId","xUserId","count","rating","taggerType","tagMergeMode","llmFields","llmBaseUrl","llmApiKey","llmModel","llmPromptPreset","llmPrompt","onnxFields","onnxModelPath","onnxTagsPath","onnxGeneralThreshold","onnxCharacterThreshold","testTaggerBtn","taggerTestResult","includeArtist","includeMeta","skipVideo","backgroundEnabled","backgroundColor","backgroundColorHex","startPage","endPage","proxy","startBtn","stopBtn","shutdownBtn","shutdownResult","statusPill","errorBox","identityLine","sourceStates","progressFill","progressText","statTotal","statDone","statSkipped","statFailed","folderLine","workspaceSubtitle","gallery","galleryCount","logBox","lightbox","lightboxMedia","lightboxTitle","lightboxMeta","lightboxOpen","lightboxPrev","lightboxNext","lightboxClose","tagDrawer","tagDrawerTitle","tagDrawerMeta","tagDrawerBody","tagDrawerClose","copyTagsBtn","queryType","queryTypeHint","queryLabel","querySearchHint","sourceArtistLabel"]) els[id] = $(id);
 
 const STORE_KEY = "artist_grabber_settings_v2";
 const STATUS_TEXT = {idle:"空闲",pending:"等待中",testing:"连接测试中",preparing:"准备中…",running:"下载中",done:"已完成",skipped:"已跳过",stopped:"已停止",error:"出错"};
 const VIDEO_EXTS = new Set(["mp4","webm","zip","gif"]);
 const LLM_PROMPT_PRESETS = {
-  general:"Analyze the image and produce concise Danbooru/WD14-style English tags for an image-training caption. Cover visible subject count, people or creatures, appearance, clothing, accessories, pose, expression, action, framing, background, lighting, colors, and visual medium/style. Prefer canonical lowercase underscore tags. Avoid redundant synonyms and do not guess artist, character identity, or copyright.",
-  character:"Focus on clearly visible characters and their attributes using concise Danbooru/WD14-style English tags. Include subject count, apparent gender presentation, hair, eyes, expression, body pose, hand position, clothing layers, footwear, accessories, interaction, and camera-facing direction. Add only essential background/composition tags. Do not infer identity, artist, or copyright.",
-  composition:"Focus on the whole scene and composition using concise Danbooru/WD14-style English tags. Include environment, foreground/background elements, action, viewpoint, shot type, camera angle, depth, lighting, weather, time of day, dominant colors, visual effects, and medium/style; still include essential visible subject and clothing tags. Do not infer identity, artist, or copyright."
+  general:`Act as a careful Danbooru/WD14 image tagger. Inspect the whole image before answering. Cover only clearly visible subject count/type, appearance, anatomy, clothing layers, accessories, pose, expression, action, gaze, shot type, crop, camera angle, setting, foreground/background objects, lighting, weather, colors, and visual medium/style. Prefer the most specific canonical lowercase_underscore tag, omit uncertain details, avoid redundant synonyms and conflicting attributes, and never infer artist from style. Character/copyright names may be used only when supplied as source hints and visually consistent.`,
+  character:`Tag the clearly visible characters with high precision using canonical Danbooru/WD14 English tags. Prioritize subject count, visible character identity only when supported by source hints, hair/eyes, facial expression, anatomy, pose, hand position, gaze, clothing layers, footwear, accessories and interactions. Add only composition/background facts that are clearly visible. Do not infer hidden clothing, exact age, ethnicity, personality or unsupported identity; omit ambiguous traits and conflicting alternatives.`,
+  composition:`Tag the entire scene and composition with precise Danbooru/WD14 English tags. Prioritize environment, foreground/background objects, action, viewpoint, shot type, crop, camera angle, depth, lighting direction, weather, time of day, dominant colors, visual effects and medium/style, while retaining essential visible subject and clothing tags. Use canonical specific terms, omit uncertain story context, and avoid redundant or mutually conflicting tags.`
 };
 let sources = [], currentSource = null, pollTimer = null, logCount = 0, itemCount = 0;
 let selectedSourceIds = new Set(), sourceConfigCache = {};
@@ -21,10 +21,21 @@ function showError(msg){els.errorBox.textContent=msg;els.errorBox.classList.remo
 function hideError(){els.errorBox.classList.add("hidden");}
 function resultText(el, ok, msg){el.className="test-result "+(ok?"ok":"err");el.textContent=(ok?"✔ ":"✘ ")+msg;}
 function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function setBackgroundColor(value){
+  const color=String(value||"").trim().toLowerCase();
+  if(!/^#[0-9a-f]{6}$/.test(color))return false;
+  els.backgroundColor.value=color;els.backgroundColorHex.value=color;return true;
+}
+function syncBackgroundColorFromText(){
+  const value=els.backgroundColorHex.value.trim();
+  if(/^#[0-9a-f]{6}$/i.test(value)){setBackgroundColor(value);els.backgroundColorHex.setCustomValidity("");}
+  else els.backgroundColorHex.setCustomValidity("请输入 6 位十六进制颜色，例如 #ffffff");
+  saveSettings();
+}
 
 function saveSettings(){
   const mappings={};document.querySelectorAll("[data-source-map]").forEach(e=>mappings[e.dataset.sourceMap]=e.value.trim());
-  const data={source:els.source.value,selectedSources:sources.filter(s=>selectedSourceIds.has(s.id)).map(s=>s.id),sourceMappings:mappings,xCookieMode:els.xCookieMode.value,pixivCookieMode:els.pixivCookieMode.value,artistQuery:els.artistQuery.value,sourceArtist:els.sourceArtist.value,canonicalArtist:els.canonicalArtist.value,canonicalArtistId:els.canonicalArtistId.value,xUserId:els.xUserId.value,count:els.count.value,proxy:els.proxy.value,taggerType:els.taggerType.value,tagMergeMode:els.tagMergeMode.value,llmBaseUrl:els.llmBaseUrl.value,llmModel:els.llmModel.value,llmPromptPreset:els.llmPromptPreset.value,llmPrompt:els.llmPrompt.value,onnxModelPath:els.onnxModelPath.value,onnxTagsPath:els.onnxTagsPath.value,onnxThreshold:els.onnxThreshold.value,tagFormat:getTagFormat(),includeArtist:els.includeArtist.checked,includeMeta:els.includeMeta.checked,skipVideo:els.skipVideo.checked};
+  const data={source:els.source.value,queryType:els.queryType.value,selectedSources:sources.filter(s=>selectedSourceIds.has(s.id)).map(s=>s.id),sourceMappings:mappings,xCookieMode:els.xCookieMode.value,pixivCookieMode:els.pixivCookieMode.value,artistQuery:els.artistQuery.value,sourceArtist:els.sourceArtist.value,canonicalArtist:els.canonicalArtist.value,canonicalArtistId:els.canonicalArtistId.value,xUserId:els.xUserId.value,count:els.count.value,startPage:els.startPage.value,endPage:els.endPage.value,proxy:els.proxy.value,taggerType:els.taggerType.value,tagMergeMode:els.tagMergeMode.value,llmBaseUrl:els.llmBaseUrl.value,llmModel:els.llmModel.value,llmPromptPreset:els.llmPromptPreset.value,llmPrompt:els.llmPrompt.value,onnxModelPath:els.onnxModelPath.value,onnxTagsPath:els.onnxTagsPath.value,onnxGeneralThreshold:els.onnxGeneralThreshold.value,onnxCharacterThreshold:els.onnxCharacterThreshold.value,tagFormat:getTagFormat(),includeArtist:els.includeArtist.checked,includeMeta:els.includeMeta.checked,skipVideo:els.skipVideo.checked,backgroundEnabled:els.backgroundEnabled.checked,backgroundColor:els.backgroundColor.value};
   try{localStorage.setItem(STORE_KEY,JSON.stringify(data));}catch(_e){}
 }
 function loadSettings(){let d={};try{d=JSON.parse(localStorage.getItem(STORE_KEY)||"{}");}catch(_e){};return d;}
@@ -41,7 +52,9 @@ async function loadSources(){
   renderSource(false); applySaved(saved);
 }
 function applySaved(d){
-  for(const [key,id] of [["artistQuery","artistQuery"],["sourceArtist","sourceArtist"],["count","count"],["proxy","proxy"],["taggerType","taggerType"],["tagMergeMode","tagMergeMode"],["llmBaseUrl","llmBaseUrl"],["llmModel","llmModel"],["llmPromptPreset","llmPromptPreset"],["llmPrompt","llmPrompt"],["onnxModelPath","onnxModelPath"],["onnxTagsPath","onnxTagsPath"],["onnxThreshold","onnxThreshold"]]) if(d[key]!==undefined) els[id].value=d[key];
+  for(const [key,id] of [["artistQuery","artistQuery"],["sourceArtist","sourceArtist"],["count","count"],["startPage","startPage"],["endPage","endPage"],["proxy","proxy"],["taggerType","taggerType"],["tagMergeMode","tagMergeMode"],["llmBaseUrl","llmBaseUrl"],["llmModel","llmModel"],["llmPromptPreset","llmPromptPreset"],["llmPrompt","llmPrompt"],["onnxModelPath","onnxModelPath"],["onnxTagsPath","onnxTagsPath"],["onnxGeneralThreshold","onnxGeneralThreshold"],["onnxCharacterThreshold","onnxCharacterThreshold"]]) if(d[key]!==undefined) els[id].value=d[key];
+  if(d.onnxGeneralThreshold===undefined&&d.onnxThreshold!==undefined)els.onnxGeneralThreshold.value=d.onnxThreshold;
+  if(d.queryType)els.queryType.value=d.queryType;renderQueryType();
   if(d.tagMergeMode===undefined) els.tagMergeMode.value=els.taggerType.value==="none"?"native_only":"tagger_only";
   if(!els.llmPrompt.value.trim()){els.llmPromptPreset.value="general";els.llmPrompt.value=LLM_PROMPT_PRESETS.general;}
   else if(LLM_PROMPT_PRESETS[els.llmPromptPreset.value]!==els.llmPrompt.value)els.llmPromptPreset.value="custom";
@@ -49,6 +62,8 @@ function applySaved(d){
   if(d.canonicalArtist){els.canonicalArtist.value=d.canonicalArtist;els.canonicalArtistId.value=d.canonicalArtistId||"";els.xUserId.value=d.xUserId||"";els.selectedArtist.innerHTML=`已恢复：<b>${escapeHtml(d.canonicalArtist)}</b>${els.source.value==="twitter"&&d.sourceArtist?` → <b>X @${escapeHtml(d.sourceArtist)}</b>`:""}`;els.selectedArtist.classList.remove("hidden");}
   if(d.tagFormat) document.querySelector(`input[name="tagFormat"][value="${d.tagFormat}"]`)?.click();
   for(const k of ["includeArtist","includeMeta","skipVideo"]) if(typeof d[k]==="boolean") els[k].checked=d[k];
+  if(typeof d.backgroundEnabled==="boolean") els.backgroundEnabled.checked=d.backgroundEnabled;
+  if(typeof d.backgroundColor==="string" && /^#[0-9a-f]{6}$/i.test(d.backgroundColor)) setBackgroundColor(d.backgroundColor);
   els.xCookieMode.value=d.xCookieMode==="legacy"?"legacy":"managed";
   els.pixivCookieMode.value=d.pixivCookieMode==="legacy"?"legacy":"managed";
   renderXCookieMode();
@@ -83,7 +98,11 @@ function renderSource(clearMapping=true){
   els.extraFields.innerHTML=extra.filter(f=>currentSource.id!=="twitter"||!legacyIds.has(f.id)).map(fieldHtml).join("");
   els.xLegacyExtraFields.innerHTML=currentSource.id==="twitter"?extra.filter(f=>legacyIds.has(f.id)).map(fieldHtml).join(""):"";
   els.rating.innerHTML=(currentSource.ratings||[["","全部"]]).map(o=>`<option value="${escapeHtml(o[0])}">${escapeHtml(o[1])}</option>`).join("");
-  if(currentSource.id==="twitter") els.sourceArtist.placeholder="X handle（选择带 X 链接的候选可自动填写）";
+  const queryMode=els.queryType.value;
+  if(currentSource.id==="twitter")els.sourceArtist.placeholder="X handle（选择带 X 链接的候选可自动填写）";
+  else if(currentSource.id==="pixiv")els.sourceArtist.placeholder="Pixiv 用户 ID";
+  else if(queryMode==="character")els.sourceArtist.placeholder="例如 hatsune_miku";
+  else if(queryMode==="tag")els.sourceArtist.placeholder="例如 1girl blue_eyes";
   else els.sourceArtist.placeholder="来源内的画师 tag / 用户 ID";
   els.sourceArtistHint.classList.toggle("hidden",currentSource.id!=="twitter");
   els.xSessionPanel.classList.toggle("hidden",currentSource.id!=="twitter");
@@ -95,6 +114,45 @@ function renderSource(clearMapping=true){
   saveSettings();
 }
 function renderTagger(){els.llmFields.classList.toggle("hidden",els.taggerType.value!=="openai");els.onnxFields.classList.toggle("hidden",els.taggerType.value!=="onnx");saveSettings();}
+function renderQueryType(){
+  const mode=els.queryType.value, isArtist=mode==="artist";
+  const copy={
+    artist:{label:"Danbooru 画师名 / 别名 / 主页 URL",placeholder:"如 kantoku、Askzy 或 https://x.com/...",hint:"以 Danbooru 画师记录确认同名身份，自动带出 X、Pixiv 等关联主页。",searchHint:"优先用 Danbooru 画师记录确认同名身份，再自动带出 X、Pixiv 等关联主页。",sourceLabel:"目标画师 / 来源内账号"},
+    character:{label:"Danbooru 角色名",placeholder:"如 hatsune_miku",hint:"搜索 Danbooru 角色标签并确认标准 tag 名称。X/Pixiv 不支持此模式。",searchHint:"候选按 Danbooru 角色标签匹配；确认后会同步到支持 tag 查询的图站。",sourceLabel:"目标角色 / 来源内 tag"},
+    tag:{label:"Danbooru 标签（支持多 Tag）",placeholder:"如 1girl, blue_eyes 或 solo",hint:"直接输入多个标签；用逗号、空格或换行分隔，下载时按 AND 条件匹配。X/Pixiv 不支持此模式。",searchHint:"程序会逐项验证标签；多个标签确认后会组合为同一组 AND 查询。",sourceLabel:"目标标签组合 / 来源内查询"}
+  }[mode];
+  els.queryLabel.textContent=copy.label;els.artistQuery.placeholder=copy.placeholder;els.queryTypeHint.textContent=copy.hint;els.querySearchHint.textContent=copy.searchHint;els.sourceArtistLabel.textContent=copy.sourceLabel;
+  if(!isArtist){els.artistCandidates.classList.add("hidden");}
+  const userSources=["twitter","pixiv"];
+  els.sourceChecklist.querySelectorAll("[data-source-check]").forEach(box=>{
+    const id=box.dataset.sourceCheck;
+    const input=els.sourceChecklist.querySelector(`[data-source-map="${id}"]`);
+    if(input)input.placeholder=id==="twitter"?"X handle":id==="pixiv"?"Pixiv 用户 ID":mode==="artist"?"来源内画师 tag":mode==="character"?"来源内角色 tag":"来源内标签组合";
+    if(userSources.includes(id)){
+      if(!isArtist&&box.checked){box.checked=false;selectedSourceIds.delete(id);if(input)input.disabled=true;}
+      box.disabled=!isArtist;
+    }
+  });
+  if(!isArtist){
+    const fallback=sources.find(source=>!userSources.includes(source.id));
+    if(selectedSourceIds.size===0&&fallback){
+      selectedSourceIds.add(fallback.id);
+      const fallbackBox=els.sourceChecklist.querySelector(`[data-source-check="${fallback.id}"]`);
+      const fallbackInput=sourceMapInput(fallback.id);
+      if(fallbackBox)fallbackBox.checked=true;
+      if(fallbackInput)fallbackInput.disabled=false;
+    }
+    if(userSources.includes(els.source.value)&&fallback){
+      const selectedFallback=[...selectedSourceIds].find(id=>!userSources.includes(id));
+      els.source.value=selectedFallback||fallback.id;
+      renderSource(false);
+    }else if(mode==="character")els.sourceArtist.placeholder="例如 hatsune_miku";
+    else if(mode==="tag")els.sourceArtist.placeholder="例如 1girl blue_eyes";
+  }
+  els.includeArtist.disabled=!isArtist;
+  if(!isArtist)els.includeArtist.checked=false;
+  saveSettings();
+}
 function applyLlmPromptPreset(){const prompt=LLM_PROMPT_PRESETS[els.llmPromptPreset.value];if(prompt!==undefined)els.llmPrompt.value=prompt;saveSettings();}
 function detectCustomLlmPrompt(){const match=Object.entries(LLM_PROMPT_PRESETS).find(([,prompt])=>prompt===els.llmPrompt.value);els.llmPromptPreset.value=match?match[0]:"custom";saveSettings();}
 function renderXCookieMode(){
@@ -117,7 +175,7 @@ function renderPixivCookieMode(){
 function collectDynamic(includeDisabled=false){const out={};document.querySelectorAll("[data-auth-field]").forEach(e=>{if(includeDisabled||!e.disabled)out[e.dataset.authField]=e.value.trim();});document.querySelectorAll("[data-extra-field]").forEach(e=>{if(includeDisabled||!e.disabled)out[e.dataset.extraField]=e.value;});return out;}
 function collectConfig(){
   stashCurrentSourceConfig();
-  const common={source:els.source.value,artist:els.sourceArtist.value.trim(),canonical_artist:els.canonicalArtist.value,canonical_artist_id:els.canonicalArtistId.value,count:parseInt(els.count.value,10)||0,tag_format:getTagFormat(),include_artist:els.includeArtist.checked,include_meta:els.includeMeta.checked,skip_video:els.skipVideo.checked,proxy:els.proxy.value.trim(),tagger_type:els.taggerType.value,tag_merge_mode:els.tagMergeMode.value,llm_base_url:els.llmBaseUrl.value.trim(),llm_api_key:els.llmApiKey.value.trim(),llm_model:els.llmModel.value.trim(),llm_prompt:els.llmPrompt.value.trim(),onnx_model_path:els.onnxModelPath.value.trim(),onnx_tags_path:els.onnxTagsPath.value.trim(),onnx_threshold:parseFloat(els.onnxThreshold.value)||0.35};
+  const common={source:els.source.value,artist:els.sourceArtist.value.trim(),query_type:els.queryType.value,canonical_artist:els.canonicalArtist.value,canonical_artist_id:els.canonicalArtistId.value,count:parseInt(els.count.value,10)||0,start_page:parseInt(els.startPage.value,10)||1,end_page:parseInt(els.endPage.value,10)||0,tag_format:getTagFormat(),include_artist:els.includeArtist.checked,include_meta:els.includeMeta.checked,skip_video:els.skipVideo.checked,background_enabled:els.backgroundEnabled.checked,background_color:els.backgroundColor.value,proxy:els.proxy.value.trim(),tagger_type:els.taggerType.value,tag_merge_mode:els.tagMergeMode.value,llm_base_url:els.llmBaseUrl.value.trim(),llm_api_key:els.llmApiKey.value.trim(),llm_model:els.llmModel.value.trim(),llm_prompt:els.llmPrompt.value.trim(),onnx_model_path:els.onnxModelPath.value.trim(),onnx_tags_path:els.onnxTagsPath.value.trim(),onnx_general_threshold:Number.isFinite(parseFloat(els.onnxGeneralThreshold.value))?parseFloat(els.onnxGeneralThreshold.value):0.35,onnx_character_threshold:Number.isFinite(parseFloat(els.onnxCharacterThreshold.value))?parseFloat(els.onnxCharacterThreshold.value):0.85};
   Object.assign(common,sourceConfigCache[els.source.value]||{},collectDynamic(),{rating:els.rating.value,x_cookie_mode:els.source.value==="twitter"?els.xCookieMode.value:"legacy",pixiv_cookie_mode:els.source.value==="pixiv"?els.pixivCookieMode.value:"legacy",x_handle:els.source.value==="twitter"?els.sourceArtist.value.trim():"",x_user_id:els.source.value==="twitter"?els.xUserId.value:""});
   const source_configs={};
   for(const id of selectedSourceIds){
@@ -133,12 +191,13 @@ function collectConfig(){
 }
 
 async function searchArtists(){
-  const q=els.artistQuery.value.trim();if(!q){showError("请输入 Danbooru 画师名、别名或主页 URL");return;}
+  const q=els.artistQuery.value.trim();if(!q){showError(els.queryType.value==="artist"?"请输入 Danbooru 画师名、别名或主页 URL":"请输入角色名或标签名");return;}
   hideError();els.searchArtistBtn.disabled=true;els.artistCandidates.classList.remove("hidden");els.artistCandidates.innerHTML='<div class="candidate-empty">搜索中…</div>';
-  const cfg=collectConfig();let data;try{data=await postJSON("/api/artists/search",{...cfg,source:"danbooru",query:q,artist:q});}catch(_e){data={ok:false,error:"无法连接本地服务"};}
+  const cfg=collectConfig();let data;try{data=await postJSON("/api/artists/search",{...cfg,source:"danbooru",query:q,artist:q,query_type:cfg.query_type});}catch(_e){data={ok:false,error:"无法连接本地服务"};}
   els.searchArtistBtn.disabled=false;if(!data.ok){els.artistCandidates.innerHTML=`<div class="candidate-empty">${escapeHtml(data.error||"搜索失败")}</div>`;return;}
-  const list=data.artists||[];if(!list.length){els.artistCandidates.innerHTML='<div class="candidate-empty">没有候选，请尝试别名、X 主页 URL 或手动填写账号</div>';return;}
-  els.artistCandidates.innerHTML=list.map((a,i)=>`<button class="candidate" data-index="${i}" type="button"><span><b>${escapeHtml(a.name)}</b>${a.other_names?`<small>${escapeHtml(Array.isArray(a.other_names)?a.other_names.join(" · "):a.other_names)}</small>`:""}</span><span class="candidate-meta">${a.x_handles?.length?`X @${escapeHtml(a.x_handles[0])}`:"无 X 链接"}${a.score!=null?` · ${Math.round(a.score*100)}%`:""}</span></button>`).join("");
+  const list=data.artists||[];if(!list.length){els.artistCandidates.innerHTML=`<div class="candidate-empty">${els.queryType.value==="artist"?"没有候选，请尝试别名、X 主页 URL 或手动填写账号":"未找到匹配标签，可尝试部分名称或直接手动输入"}</div>`;return;}
+  const isArtist=els.queryType.value==="artist";
+  els.artistCandidates.innerHTML=list.map((a,i)=>{const meta=isArtist?(a.x_handles?.length?`X @${escapeHtml(a.x_handles[0])}`:a.post_count!=null?`${a.post_count} 作品`:"无 X 链接"):(a.post_count!=null?`${a.post_count} 作品`:Array.isArray(a.query_tags)&&a.query_tags.length>1?"组合查询":"已验证");return `<button class="candidate" data-index="${i}" type="button"><span><b>${escapeHtml(a.name)}</b>${a.other_names?`<small>${escapeHtml(Array.isArray(a.other_names)?a.other_names.join(" · "):a.other_names)}</small>`:""}</span><span class="candidate-meta">${meta}${a.score!=null?` · ${Math.round(a.score*100)}%`:""}</span></button>`;}).join("");
   els.artistCandidates.querySelectorAll(".candidate").forEach(btn=>btn.addEventListener("click",()=>selectArtist(list[Number(btn.dataset.index)])));
 }
 function selectArtist(a){
@@ -148,7 +207,10 @@ function selectArtist(a){
   sources.forEach(source=>{const input=sourceMapInput(source.id);if(!input)return;if(source.id==="twitter")input.value=handle||"";else if(source.id==="pixiv")input.value=pixivId;else input.value=a.name||"";});
   if(els.source.value==="twitter")els.sourceArtist.value=handle||"";else if(els.source.value==="pixiv")els.sourceArtist.value=pixivId;else els.sourceArtist.value=a.name||"";
   const links=[handle?`X @${escapeHtml(handle)}`:"",pixivId?`Pixiv #${escapeHtml(pixivId)}`:""].filter(Boolean).join(" · ");
-  els.selectedArtist.innerHTML=`已确认：<b>${escapeHtml(a.name)}</b>${links?` → <b>${links}</b>`:" <span class='muted'>（Danbooru 未登记 X / Pixiv 链接，相关来源需手动填写）</span>"}`;
+  const mode=els.queryType.value;
+  if(mode==="artist")els.selectedArtist.innerHTML=`已确认：<b>${escapeHtml(a.name)}</b>${links?` → <b>${links}</b>`:" <span class='muted'>（Danbooru 未登记 X / Pixiv 链接，相关来源需手动填写）</span>"}`;
+  else if(mode==="character")els.selectedArtist.innerHTML=`已确认角色：<b>${escapeHtml(a.name)}</b><span class='muted'>（已同步到支持 tag 查询的图站）</span>`;
+  else els.selectedArtist.innerHTML=`已确认标签组合：<b>${escapeHtml(a.name)}</b><span class='muted'>（按 AND 条件查询支持的图站）</span>`;
   els.selectedArtist.classList.remove("hidden");els.artistCandidates.classList.add("hidden");saveSettings();
 }
 function clearArtistSelection(clearInputs=true){els.canonicalArtist.value="";els.canonicalArtistId.value="";els.xUserId.value="";els.selectedArtist.classList.add("hidden");els.artistCandidates.classList.add("hidden");if(clearInputs)els.sourceArtist.value="";}
@@ -264,6 +326,7 @@ function addCard(item){
   mediaButton.appendChild(media);card.appendChild(mediaButton);
   const badge=document.createElement("span");badge.className="badge";badge.textContent=`${String(item.source||"").toUpperCase()} · #${item.id||""}`;card.appendChild(badge);
   if(item.tag_status==="generated"||item.status==="duplicate"){const mark=document.createElement("span");mark.className="tag-mark";mark.textContent=item.status==="duplicate"?"重复已合并":"AI";card.appendChild(mark);}
+  if(item.background_applied){const mark=document.createElement("span");mark.className="background-mark";mark.textContent="底色";card.appendChild(mark);}
   const overlay=document.createElement("div");overlay.className="card-overlay";card.appendChild(overlay);
   const actions=document.createElement("div");actions.className="card-actions";
   const tagsButton=document.createElement("button");tagsButton.className="card-action";tagsButton.type="button";const tagCount=toTags(item.final_tags).length;tagsButton.textContent=tagCount?`标签 ${tagCount}`:"标签";tagsButton.addEventListener("click",()=>openTagDrawer(item));
@@ -274,6 +337,11 @@ els.source.addEventListener("change",()=>{stashCurrentSourceConfig();renderSourc
 els.sourceArtist.addEventListener("input",()=>{const input=sourceMapInput(els.source.value);if(input)input.value=els.sourceArtist.value;});
 els.xCookieMode.addEventListener("change",renderXCookieMode);els.pixivCookieMode.addEventListener("change",renderPixivCookieMode);
 els.taggerType.addEventListener("change",()=>{els.tagMergeMode.value=els.taggerType.value==="none"?"native_only":"tagger_only";renderTagger();});
+els.queryType.addEventListener("change",renderQueryType);
+els.backgroundEnabled.addEventListener("change",saveSettings);
+els.backgroundColor.addEventListener("input",()=>{setBackgroundColor(els.backgroundColor.value);saveSettings();});
+els.backgroundColorHex.addEventListener("input",syncBackgroundColorFromText);
+els.startPage.addEventListener("input",saveSettings);els.endPage.addEventListener("input",saveSettings);
 els.tagMergeMode.addEventListener("change",saveSettings);els.llmPromptPreset.addEventListener("change",applyLlmPromptPreset);els.llmPrompt.addEventListener("input",detectCustomLlmPrompt);
 els.searchArtistBtn.addEventListener("click",searchArtists);els.artistQuery.addEventListener("keydown",e=>{if(e.key==="Enter")searchArtists();});
 els.openXSessionBtn.addEventListener("click",openXSession);els.checkXSessionBtn.addEventListener("click",checkXSession);els.openPixivSessionBtn.addEventListener("click",openPixivSession);els.checkPixivSessionBtn.addEventListener("click",checkPixivSession);els.openXBtn.addEventListener("click",openXPage);

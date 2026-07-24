@@ -51,13 +51,15 @@
       </details>
 
       <details class="config-section" open>
-        <summary><span class="step-number">02</span><span>确认同一画师</span><small>模糊匹配</small></summary>
+        <summary><span class="step-number">02</span><span>确认同一画师 / 角色 / 标签</span><small>模糊匹配</small></summary>
         <div class="section-body">
-          <label>Danbooru 画师名 / 别名 / 主页 URL<span class="search-row"><input id="artistQuery" type="text" placeholder="如 kantoku、Askzy 或 https://x.com/..." autocomplete="off"><button id="searchArtistBtn" class="secondary-btn" type="button">搜索</button></span></label>
-          <p class="hint">优先用 Danbooru 画师记录确认同名身份，再自动带出 X、Pixiv 等关联主页。</p>
+          <label>搜索类型<select id="queryType"><option value="artist">画师</option><option value="character">角色</option><option value="tag">通用标签</option></select></label>
+          <p class="hint" id="queryTypeHint">以 Danbooru 画师记录确认同名身份，自动带出 X、Pixiv 等关联主页。</p>
+          <label><span id="queryLabel">Danbooru 画师名 / 别名 / 主页 URL</span><span class="search-row"><input id="artistQuery" type="text" placeholder="如 kantoku、Askzy 或 https://x.com/..." autocomplete="off"><button id="searchArtistBtn" class="secondary-btn" type="button">搜索</button></span></label>
+          <p class="hint" id="querySearchHint">优先用 Danbooru 画师记录确认同名身份，再自动带出 X、Pixiv 等关联主页。</p>
           <div id="artistCandidates" class="candidate-list hidden"></div>
           <div id="selectedArtist" class="selected-artist hidden"></div>
-          <label>目标画师 / 来源内账号<input id="sourceArtist" type="text" placeholder="选择候选后自动填写，也可手动输入" autocomplete="off"></label>
+          <label><span id="sourceArtistLabel">目标画师 / 来源内账号</span><input id="sourceArtist" type="text" placeholder="选择候选后自动填写，也可手动输入" autocomplete="off"></label>
           <p id="sourceArtistHint" class="hint hidden">这里填写要抓取的 X 画师账号；浏览器 Cookie 可以来自你自己的任意已登录 X 账号。</p>
           <input id="canonicalArtist" type="hidden"><input id="canonicalArtistId" type="hidden"><input id="xUserId" type="hidden">
         </div>
@@ -72,14 +74,24 @@
           <label>标签合并方式<select id="tagMergeMode"><option value="tagger_only">仅使用打标器标签（推荐）</option><option value="native_plus_tagger">来源标签 + 打标器标签</option><option value="native_only">仅使用来源标签</option></select></label>
 
           <div id="llmFields" class="sub-panel hidden"><label>Base URL<input id="llmBaseUrl" type="text" value="https://api.openai.com/v1" placeholder="http://127.0.0.1:11434/v1"></label><label>API Key<input id="llmApiKey" type="password" autocomplete="off" placeholder="本地无鉴权服务可留空"></label><label>视觉模型<input id="llmModel" type="text" placeholder="支持图片输入的模型名"></label><label>提示词预设<select id="llmPromptPreset"><option value="general">Danbooru / WD14 通用（推荐）</option><option value="character">人物与服饰重点</option><option value="composition">场景与构图重点</option><option value="custom">自定义</option></select></label><label>提示词（可编辑）<textarea id="llmPrompt" rows="6" placeholder="选择预设后自动填入，也可直接编辑"></textarea></label><p class="hint">程序会强制附加 JSON tags schema；远程端点会收到图片内容，有隐私要求时请使用本地兼容服务。</p></div>
-          <div id="onnxFields" class="sub-panel hidden"><label>ONNX 模型路径<input id="onnxModelPath" type="text" placeholder="D:\models\model.onnx"></label><label>selected_tags.csv 路径<input id="onnxTagsPath" type="text" placeholder="D:\models\selected_tags.csv"></label><label>标签阈值<input id="onnxThreshold" type="number" min="0" max="1" step="0.01" value="0.35"></label><p class="hint">需要可选依赖：onnxruntime、Pillow、numpy。</p></div>
+          <div id="onnxFields" class="sub-panel hidden"><label>ONNX 模型路径<input id="onnxModelPath" type="text" placeholder="D:\models\model.onnx"></label><label>selected_tags.csv 路径<input id="onnxTagsPath" type="text" placeholder="D:\models\selected_tags.csv"></label><div class="threshold-row"><label>通用标签阈值<input id="onnxGeneralThreshold" type="number" min="0" max="1" step="0.01" value="0.35"></label><label>角色标签阈值<input id="onnxCharacterThreshold" type="number" min="0" max="1" step="0.01" value="0.85"></label></div><p class="hint">角色标签使用 category 4 的独立阈值；检测到 CUDA provider 时自动优先使用 GPU，否则回退 CPU。</p></div>
           <div class="test-row"><button id="testTaggerBtn" class="secondary-btn" type="button">测试打标器</button><span id="taggerTestResult" class="test-result"></span></div>
-          <div class="radio-row"><label class="choice"><input type="radio" name="tagFormat" value="comma" checked><span>训练格式<small>逗号分隔</small></span></label><label class="choice"><input type="radio" name="tagFormat" value="space"><span>原始格式<small>空格分隔</small></span></label></div>
-          <label class="check"><input type="checkbox" id="includeArtist" checked><span>标签中包含已确认的 Danbooru 画师名</span></label>
-          <label class="check"><input type="checkbox" id="includeMeta"><span>包含来源 meta 标签</span></label>
-          <label class="check"><input type="checkbox" id="skipVideo" checked><span>跳过视频 / 动图</span></label>
-        </div>
-      </details>
+           <div class="radio-row"><label class="choice"><input type="radio" name="tagFormat" value="comma" checked><span>训练格式<small>逗号分隔</small></span></label><label class="choice"><input type="radio" name="tagFormat" value="space"><span>原始格式<small>空格分隔</small></span></label></div>
+           <label class="check"><input type="checkbox" id="includeArtist" checked><span>标签中包含已确认的 Danbooru 画师名</span></label>
+           <label class="check"><input type="checkbox" id="includeMeta"><span>包含来源 meta 标签</span></label>
+           <label class="check"><input type="checkbox" id="skipVideo" checked><span>跳过视频 / 动图</span></label>
+           <div class="sub-panel output-panel">
+             <div class="session-heading"><span>透明图底色</span><span class="session-status">可选</span></div>
+             <label class="check"><input type="checkbox" id="backgroundEnabled"><span>自动铺设纯色背景<small>仅处理含透明通道的图片，原图会被输出文件替换</small></span></label>
+             <div class="color-row"><span>背景颜色</span><input id="backgroundColor" type="color" value="#ffffff" aria-label="背景颜色"><input id="backgroundColorHex" type="text" value="#ffffff" maxlength="7" pattern="#[0-9a-fA-F]{6}" spellcheck="false" aria-label="背景颜色十六进制值"></div>
+           </div>
+           <div class="sub-panel output-panel">
+             <div class="session-heading"><span>抓取范围</span><span class="session-status">页码</span></div>
+             <div class="range-row"><label>起始页<input id="startPage" type="number" min="1" step="1" value="1"></label><span class="range-separator">至</span><label>结束页<input id="endPage" type="number" min="0" step="1" placeholder="不限"></label></div>
+             <p class="hint">结束页留空表示到来源结束；单次下载数量仍是最终硬上限。</p>
+           </div>
+         </div>
+       </details>
 
       <details class="config-section">
         <summary><span class="step-number">04</span><span>网络与安全</span><small>可选</small></summary>

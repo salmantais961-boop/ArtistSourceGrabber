@@ -12,7 +12,7 @@ Gelbooru artist 接口不公开 JSON 端点传统搜索,改用 dapi 的 artist �
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-from .base import Source, Post
+from .base import Source, Post, normalize_search_tags
 from http_util import http_request, describe_error
 
 
@@ -123,9 +123,24 @@ class GelbooruLikeSource(Source):
 
     def resolve_artist(self, cfg, logger):
         raw = cfg["artist"].strip()
+        if cfg.get("query_type", "artist") != "artist":
+            query = normalize_search_tags(raw)
+            if not query:
+                raise RuntimeError("请至少填写一个有效标签")
+            return query
         # Gelbooru 画师通常以 "<artist_name>" 形式存在于 tag 中,等价于 "artist:<name>"
         # 用户输入名称即可,无需数字 ID
         return raw.replace(" ", "_")
+
+    @staticmethod
+    def _build_search(artist_key, cfg):
+        if cfg.get("query_type", "artist") == "artist":
+            search = "artist:%s" % artist_key
+        else:
+            search = artist_key
+        if cfg.get("rating"):
+            search += " rating:%s" % cfg["rating"]
+        return search
 
     def search_artists(self, query, cfg, limit=10):
         if not query:
@@ -190,9 +205,7 @@ class GelbooruLikeSource(Source):
         return []
 
     def count_posts(self, artist_key, cfg):
-        search = "artist:%s" % artist_key
-        if cfg.get("rating"):
-            search += " rating:%s" % cfg["rating"]
+        search = self._build_search(artist_key, cfg)
         try:
             data = self._api("post", "index", 0, search, cfg, limit=1)
         except Exception:
@@ -207,9 +220,7 @@ class GelbooruLikeSource(Source):
         return -1
 
     def list_posts(self, artist_key, page, cfg):
-        search = "artist:%s" % artist_key
-        if cfg.get("rating"):
-            search += " rating:%s" % cfg["rating"]
+        search = self._build_search(artist_key, cfg)
         data = self._api("post", "index", page - 1, search, cfg, limit=PAGE_LIMIT)
         out = []
         for item in self._post_items(data):

@@ -145,6 +145,52 @@ class MixedSourceTaskTests(unittest.TestCase):
         self.assertEqual(task.done, 2)
         self.assertEqual(task.skipped, 0)
 
+    def test_page_range_limits_source_pagination(self):
+        class PagedSource(FakeSource):
+            def __init__(self):
+                super().__init__("paged")
+                self.pages = []
+
+            def count_posts(self, artist_key, cfg):
+                return -1
+
+            def list_posts(self, artist_key, page, cfg):
+                self.pages.append(page)
+                if page > 3:
+                    return []
+                return [{"id": str(page), "ext": "jpg",
+                         "file_url": "memory://page-%s" % page,
+                         "caption": "page_%s" % page}]
+
+        source = PagedSource()
+        task = app.Task([make_run(source, start_page=2, end_page=3)], tagger=None)
+        with mock.patch.object(app, "_download", self.fake_download):
+            app.run_task(task)
+        self.assertEqual(source.pages, [2, 3])
+        self.assertEqual(task.done, 2)
+        self.assertEqual(task.target, 2)
+
+    def test_page_range_does_not_use_whole_site_count_as_target(self):
+        class CountedPagedSource(FakeSource):
+            def __init__(self):
+                super().__init__("counted-paged")
+
+            def count_posts(self, artist_key, cfg):
+                return 100
+
+            def list_posts(self, artist_key, page, cfg):
+                return [{"id": str(page), "ext": "jpg",
+                         "file_url": "memory://counted-page-%s" % page,
+                         "caption": "page_%s" % page}]
+
+        source = CountedPagedSource()
+        task = app.Task([make_run(source, count=0, start_page=2, end_page=3)],
+                        tagger=None)
+        with mock.patch.object(app, "_download", self.fake_download):
+            app.run_task(task)
+        self.assertEqual(task.done, 2)
+        self.assertEqual(task.target, 2)
+
     def test_pixiv_onnx_tagger_only_excludes_native_tags(self):
         source = FakeSource("pixiv", [{"id": "42", "ext": "jpg",
                                        "file_url": "memory://pixiv",
