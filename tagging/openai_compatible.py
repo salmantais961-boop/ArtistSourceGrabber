@@ -19,15 +19,32 @@ OUTPUT_CONTRACT = """Output requirements (mandatory):
 - ``tags`` must be an array of concise English Danbooru/WD14-style tag strings.
 - Prefer canonical lowercase underscore tags such as ``1girl``, ``blue_eyes``,
   ``looking_at_viewer`` and ``upper_body``.
+- Include a tag only when the visual evidence or a source hint clearly supports it;
+  omit uncertain details instead of guessing.
+- Use one canonical tag per concept, avoid redundant synonyms, and never output
+  mutually conflicting tags for the same attribute.
 - Do not include confidence scores, explanations, headings, Markdown or code fences.
-- Do not guess an artist, character identity, copyright, or other facts that are
-  not visually supported. Do not copy source hints blindly."""
+- Never infer an artist from style. Character/copyright identity may be used only
+  when it appears in the supplied source hints and the visible image is consistent;
+  never invent identity from appearance alone. Do not copy source hints blindly."""
 
-DEFAULT_PROMPT = """Analyze the supplied image for an image-training caption.
-Describe visible subject count, people/creatures, appearance, clothing,
-accessories, pose, expression, action, framing, background, lighting, colors and
-visual medium/style. Use specific Danbooru/WD14 vocabulary and avoid redundant
-synonyms.
+DEFAULT_PROMPT = """You are an expert Danbooru/WD14 image tagger. Inspect the
+entire image before answering and build a precise training-caption tag set from
+visible evidence.
+
+Work through this checklist internally:
+1. subject count and subject type; clear relationships or interactions;
+2. visible anatomy, hair, eyes, expression and distinguishing attributes;
+3. clothing layers, footwear, accessories, pose, action and gaze direction;
+4. shot type, crop, camera angle, viewpoint and composition;
+5. setting, foreground/background objects, lighting, weather, time and colors;
+6. visual medium/style and only clearly visible quality or rendering traits.
+
+Prefer the most specific established tag over a vague synonym. Distinguish what
+is visible from what is merely plausible: do not infer hidden clothing, age,
+ethnicity, personality, off-screen objects or unsupported story context. Avoid
+negative/absence tags and avoid repeating the same concept at different levels
+of specificity unless both tags are standard and independently useful.
 
 """ + OUTPUT_CONTRACT
 

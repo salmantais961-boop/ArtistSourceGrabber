@@ -10,7 +10,7 @@ import base64
 import re
 import urllib.parse
 
-from .base import Source, Post
+from .base import Source, Post, normalize_search_tags
 from http_util import http_request, describe_error
 
 
@@ -84,6 +84,11 @@ class E621RealSource(Source):
 
     def resolve_artist(self, cfg, logger):
         raw = cfg["artist"].strip()
+        if cfg.get("query_type", "artist") != "artist":
+            query = normalize_search_tags(raw)
+            if not query:
+                raise RuntimeError("请至少填写一个有效标签")
+            return query
         if re.fullmatch(r"\d+", raw):
             try:
                 info = self._api("/artists/%s.json" % raw, {}, cfg)

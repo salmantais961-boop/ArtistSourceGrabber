@@ -83,7 +83,9 @@ def normalize_tagger_config(body):
         aliases = {
             "onnx_model_path": "model_path",
             "onnx_tags_path": "tags_path",
-            "onnx_threshold": "threshold",
+            "onnx_threshold": "general_threshold",
+            "onnx_general_threshold": "general_threshold",
+            "onnx_character_threshold": "character_threshold",
         }
     else:
         aliases = {}

@@ -113,6 +113,8 @@ class OpenAITests(unittest.TestCase):
     def test_default_prompt_declares_required_schema(self):
         self.assertIn('{"tags": ["tag_one", "tag_two"]}', DEFAULT_PROMPT)
         self.assertIn("Danbooru/WD14", DEFAULT_PROMPT)
+        self.assertIn("visible evidence", DEFAULT_PROMPT)
+        self.assertIn("mutually conflicting", DEFAULT_PROMPT)
 
     def test_key_is_optional(self):
         cfg = OpenAICompatibleTagger().normalize_cfg({
@@ -219,7 +221,45 @@ class LocalONNXConfigTests(unittest.TestCase):
             })
         self.assertIsInstance(cfg, dict)
         self.assertEqual(cfg["threshold"], 0.4)
+        self.assertEqual(cfg["general_threshold"], 0.4)
+        self.assertEqual(cfg["character_threshold"], 0.85)
         self.assertEqual(cfg["categories"], {"0", "4"})
+
+    def test_uses_separate_general_and_character_thresholds(self):
+        import numpy as np
+        from PIL import Image
+
+        class Input:
+            name = "input"
+            shape = [1, 3, 2, 2]
+
+        class Session:
+            def get_inputs(self):
+                return [Input()]
+
+            def run(self, _outputs, _feed):
+                return [np.asarray([0.4, 0.8], dtype=np.float32)]
+
+        tagger = LocalONNXTagger()
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as image_file:
+            image_file.write(b"not decoded here")
+            image_path = image_file.name
+        try:
+            cfg = {
+                "model_path": "model.onnx", "tags_path": "tags.csv",
+                "general_threshold": 0.35, "character_threshold": 0.85,
+                "threshold": 0.35, "categories": {"0", "4"},
+            }
+            with mock.patch.object(tagger, "_load", return_value=(
+                    np, Image, Session(),
+                    [("general", "0"), ("character", "4")])):
+                with mock.patch.object(
+                        tagger, "_prepare_image",
+                        return_value=np.zeros((1, 3, 2, 2), dtype=np.float32)):
+                    result = tagger.tag(TagContext(image_path=image_path), cfg)
+            self.assertEqual(result.tags, ["general"])
+        finally:
+            os.remove(image_path)
 
     def test_reads_wd14_selected_tags_csv(self):
         with tempfile.NamedTemporaryFile("w", suffix=".csv", encoding="utf-8",

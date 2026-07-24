@@ -4,7 +4,7 @@ import re
 import urllib.parse
 from difflib import SequenceMatcher
 
-from .base import Source, Post
+from .base import Source, Post, normalize_search_tags, split_search_tags
 from http_util import http_request, describe_error
 
 
@@ -79,6 +79,11 @@ class DanbooruLikeSource(Source):
     # ---- 画师解析 ----
     def resolve_artist(self, cfg, logger):
         raw = cfg["artist"].strip()
+        if cfg.get("query_type", "artist") != "artist":
+            query = normalize_search_tags(raw)
+            if not query:
+                raise RuntimeError("请至少填写一个有效标签")
+            return query
         if re.fullmatch(r"\d+", raw):
             try:
                 info = self._api("/artists/%s.json" % raw, {}, cfg)
@@ -95,7 +100,7 @@ class DanbooruLikeSource(Source):
     def search_artists(self, query, cfg, limit=10):
         if not query:
             return []
-        if cfg.get("query_type") != "artist":
+        if cfg.get("query_type", "artist") != "artist":
             return self._search_tags(query, cfg, limit)
         return self._search_artist_entries(query, cfg, limit)
 
@@ -198,7 +203,12 @@ class DanbooruLikeSource(Source):
         return max(containment, SequenceMatcher(None, query, candidate).ratio())
 
     def _search_tags(self, query, cfg, limit):
-        query = query.strip().replace(" ", "_")
+        tags = split_search_tags(query)
+        if not tags:
+            return []
+        if len(tags) > 1:
+            return self._search_tag_combination(tags, cfg)
+        query = tags[0]
         CATEGORY_LABELS = {"-1": "全部", "0": "通用", "1": "画师", "3": "版权", "4": "角色"}
         try:
             params = "search[name_matches]=*%s*&search[order]=count&limit=%d" % (
@@ -227,6 +237,60 @@ class DanbooruLikeSource(Source):
             })
         results.sort(key=lambda x: (-int(x.get("post_count") or 0), x.get("name", "")))
         return results[:limit]
+
+    def _search_tag_combination(self, tags, cfg):
+        """Validate each normal tag and return one AND-query candidate."""
+
+        validated = []
+        deprecated = False
+        for requested in tags:
+            # Booru metatags and exclusions are valid query tokens but do not
+            # have a corresponding row in /tags.json.
+            lookup = requested.lstrip("-~")
+            if ":" in lookup or not lookup:
+                validated.append(requested)
+                continue
+            try:
+                params = "search[name_matches]=%s&limit=5" % urllib.parse.quote(
+                    lookup, safe="*")
+                url = self.api_base + "/tags.json?" + params
+                if cfg.get("login") and cfg.get("api_key"):
+                    url += "&login=%s&api_key=%s" % (
+                        urllib.parse.quote(cfg["login"]),
+                        urllib.parse.quote(cfg["api_key"]))
+                data = http_request(url, cfg.get("proxy"))
+            except Exception:
+                return []
+            if not isinstance(data, list):
+                return []
+            exact = next((item for item in data or []
+                          if str(item.get("name") or "").casefold() == lookup.casefold()), None)
+            if exact is None:
+                return []
+            canonical = str(exact.get("name") or lookup)
+            prefix = requested[:len(requested) - len(requested.lstrip("-~"))]
+            validated.append(prefix + canonical)
+            deprecated = deprecated or bool(exact.get("is_deprecated"))
+        expression = " ".join(validated)
+        total = None
+        try:
+            counts = self._api("/counts/posts.json", {"tags": expression}, cfg)
+            raw_total = ((counts or {}).get("counts") or {}).get("posts")
+            if raw_total is not None:
+                total = int(raw_total)
+        except Exception:
+            pass
+        return [{
+            "id": expression,
+            "name": expression,
+            "site": self.id,
+            "profile_url": "%s/posts?tags=%s" % (
+                self.api_base, urllib.parse.quote(expression)),
+            "post_count": total,
+            "other_names": "AND 组合 · 已验证 %d 个查询项" % len(validated),
+            "is_banned": deprecated,
+            "query_tags": validated,
+        }]
 
     # ---- 计数 ----
     def count_posts(self, artist_key, cfg):

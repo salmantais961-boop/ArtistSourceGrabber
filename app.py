@@ -16,6 +16,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from http_util import build_opener, describe_error
+from image_processing import apply_solid_background, normalize_hex_color
 from sources import get_source, list_sources
 from tagging import create_tagger, normalize_tagger_config
 
@@ -37,6 +38,51 @@ MIME_TYPES = {
     ".mp4": "video/mp4", ".webm": "video/webm", ".svg": "image/svg+xml",
     ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8",
 }
+
+QUERY_TYPES = {"artist", "character", "tag"}
+BACKGROUND_IMAGE_EXTS = {"png", "webp", "gif", "tif", "tiff", "bmp", "avif",
+                         "jpg", "jpeg"}
+
+
+def _coerce_bool(value, default=False):
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().casefold() in {"1", "true", "yes", "on"}
+
+
+def _normalize_common_task_settings(body):
+    """Validate task-wide settings injected into every source config."""
+
+    query_type = str(body.get("query_type") or "artist").strip().lower()
+    if query_type not in QUERY_TYPES:
+        return "搜索类型不合法"
+    try:
+        start_page = int(body.get("start_page") or body.get("range_start") or 1)
+        end_page = int(body.get("end_page") or body.get("range_end") or 0)
+    except (TypeError, ValueError):
+        return "抓取页范围必须是整数"
+    if start_page < 1:
+        return "起始页必须大于等于 1"
+    if end_page < 0:
+        return "结束页不能为负数"
+    if end_page and end_page < start_page:
+        return "结束页不能小于起始页"
+    try:
+        background_color = normalize_hex_color(
+            body.get("background_color") or "#ffffff")
+    except ValueError as exc:
+        return str(exc)
+    return {
+        "query_type": query_type,
+        "start_page": start_page,
+        "end_page": end_page,
+        "background_enabled": _coerce_bool(body.get("background_enabled"), False),
+        "background_color": background_color,
+    }
 
 
 class Task:
@@ -183,6 +229,7 @@ TASK_ITEM_FIELDS = {
     "id", "source", "url", "ext", "status", "duplicate_of", "filename",
     "preview_url", "image_url", "native_tags", "generated_tags", "final_tags",
     "tag_merge_mode", "tagger_id", "tag_status", "tag_error", "caption_url",
+    "background_applied",
 }
 
 
@@ -235,6 +282,7 @@ def _safe_task_item(item):
             safe[key] = str(safe[key] or "")
     for key in ("native_tags", "generated_tags", "final_tags"):
         safe[key] = _safe_item_tags(safe.get(key))
+    safe["background_applied"] = bool(safe.get("background_applied", False))
     safe["tag_error"] = _safe_item_error(safe.get("tag_error"))
     return safe
 
@@ -276,6 +324,7 @@ def _task_item(task, source, cfg, pid, filename="", image_url="", **values):
         "tag_status": "",
         "tag_error": "",
         "caption_url": caption_url,
+        "background_applied": False,
     }
     item.update(values)
     return _safe_task_item(item)
@@ -386,7 +435,10 @@ def _caption_base_tags(task, native_caption, cfg):
     tags = []
     if mode in {"native_only", "native_plus_tagger"}:
         tags.extend(_split_caption(native_caption, cfg.get("tag_format", "comma")))
-    if cfg.get("include_artist") and task.canonical_artist:
+    # A tag query such as ``1girl blue_eyes`` is a search expression, not an
+    # artist identity.  Do not write the whole expression as one caption tag.
+    if (cfg.get("include_artist") and cfg.get("query_type", "artist") == "artist"
+            and task.canonical_artist):
         tags.insert(0, task.canonical_artist)
     return tags
 
@@ -408,6 +460,7 @@ def process_post(task, post, target_dir, run=None):
     native_tags = []
     generated_tags = []
     tag_error = ""
+    background_applied = False
     try:
         if source.skip_post(post, cfg):
             native_caption = _best_effort_native_caption(source, post, cfg)
@@ -442,6 +495,13 @@ def process_post(task, post, target_dir, run=None):
         existed = os.path.exists(file_path)
         if not existed:
             _download(url, file_path, cfg, post.get("extra_headers"))
+
+        if cfg.get("background_enabled") and ext in BACKGROUND_IMAGE_EXTS:
+            background_applied = apply_solid_background(
+                file_path, cfg.get("background_color") or "#ffffff")
+            if background_applied:
+                task.log("[%s] #%s 已将透明区域铺为 %s" % (
+                    source.label, pid, cfg.get("background_color") or "#ffffff"))
 
         digest = _sha256_file(file_path)
         native_caption = source.build_caption(post, cfg)
@@ -481,12 +541,14 @@ def process_post(task, post, target_dir, run=None):
                 image_url=duplicate["rel_url"], ext=duplicate["ext"],
                 status="duplicate", duplicate_of=duplicate["id"],
                 native_tags=native_tags, generated_tags=[], final_tags=final_tags,
-                tag_status="merged"))
+                tag_status="merged", background_applied=(
+                    background_applied or bool(duplicate.get("background_applied")))))
             return False
 
         task.hashes[digest] = {
             "file_path": file_path, "txt_path": txt_path, "filename": filename,
             "rel_url": rel_url, "ext": ext, "id": pid, "source": source.id,
+            "background_applied": background_applied,
         }
         tag_status = "native"
         if task.tagger is not None and cfg.get("tag_merge_mode") != "native_only":
@@ -510,7 +572,8 @@ def process_post(task, post, target_dir, run=None):
             task, source, cfg, pid, filename=filename, image_url=rel_url, ext=ext,
             status="exists" if existed else "ok", native_tags=native_tags,
             generated_tags=generated_tags, final_tags=final_tags,
-            tag_status=tag_status, tag_error=tag_error))
+            tag_status=tag_status, tag_error=tag_error,
+            background_applied=background_applied))
         return True
     except Exception as exc:
         error = _safe_item_error(describe_error(exc))
@@ -528,6 +591,7 @@ def process_post(task, post, target_dir, run=None):
             generated_tags=generated_tags, final_tags=_read_caption_tags(
                 txt_path, cfg.get("tag_format", "comma")) if txt_path else [],
             tag_status="failed", tag_error=tag_error or error,
+            background_applied=background_applied,
             caption_url=caption_url))
         return False
 
@@ -553,6 +617,9 @@ def _run_source(task, run, target_dir):
         with task.lock:
             task.artist_key = str(artist_key)
             state["artist_key"] = str(artist_key)
+        start_page = int(cfg.get("start_page") or 1)
+        end_page = int(cfg.get("end_page") or 0)
+        range_limited = start_page != 1 or bool(end_page)
         total = source.count_posts(artist_key, cfg)
         with task.lock:
             state["site_total"] = int(total) if total is not None else -1
@@ -563,7 +630,7 @@ def _run_source(task, run, target_dir):
             if total and total > 0:
                 target = min(target, total)
         else:
-            target = total if total and total > 0 else 0
+            target = total if total and total > 0 and not range_limited else 0
         with task.lock:
             previous_target = state["target"]
             state["target"] = int(target)
@@ -576,8 +643,12 @@ def _run_source(task, run, target_dir):
             task.log("[%s] 不提供可靠总数，将持续到来源分页结束" % source.label)
 
         seen = set()
-        page = 1
-        while not task.stop_flag and page <= MAX_PAGES:
+        page = start_page
+        if start_page != 1 or end_page:
+            task.log("[%s] 抓取页范围：%s 至 %s" % (
+                source.label, start_page, end_page or "来源结束"))
+        while (not task.stop_flag and page <= MAX_PAGES
+               and (not end_page or page <= end_page)):
             if target and state["done"] >= target:
                 break
             posts = source.list_posts(artist_key, page, cfg)
@@ -601,9 +672,10 @@ def _run_source(task, run, target_dir):
             time.sleep(LIST_INTERVAL)
 
         with task.lock:
-            if state["target"] <= 0:
-                task.target += state["done"] - state["target"]
-                state["target"] = state["done"]
+            processed = state["done"] + state["skipped"] + state["failed"]
+            if state["target"] <= 0 or (range_limited and not task.stop_flag):
+                task.target += processed - state["target"]
+                state["target"] = processed
             state["status"] = "stopped" if task.stop_flag else "done"
         task.log("[%s] 来源结束：成功 %d，跳过 %d，失败 %d" % (
             source.label, state["done"], state["skipped"], state["failed"]))
@@ -689,10 +761,13 @@ def normalize_config(body):
     cfg = source.normalize_cfg(source_body)
     if isinstance(cfg, str):
         return None, None, cfg
+    common = _normalize_common_task_settings(body)
+    if isinstance(common, str):
+        return None, None, common
+    cfg.update(common)
     cfg["source"] = source_id
     cfg["canonical_artist"] = str(body.get("canonical_artist") or "").strip()
     cfg["canonical_artist_id"] = str(body.get("canonical_artist_id") or "").strip()
-    cfg["query_type"] = str(body.get("query_type") or "artist")
     tagger_cfg = normalize_tagger_config(body)
     if isinstance(tagger_cfg, str):
         return None, None, tagger_cfg
@@ -719,6 +794,9 @@ def normalize_task_configs(body):
     tagger_cfg = normalize_tagger_config(body)
     if isinstance(tagger_cfg, str):
         return None, None, tagger_cfg
+    common = _normalize_common_task_settings(body)
+    if isinstance(common, str):
+        return None, None, common
     for selected_entry in selected:
         entry_cfg = selected_entry if isinstance(selected_entry, dict) else {}
         source_id = str(entry_cfg.get("id") or entry_cfg.get("source") or selected_entry).strip().lower()
@@ -743,13 +821,13 @@ def normalize_task_configs(body):
                 "artist": str(merged.get("artist") or ""),
                 "canonical_artist": str(body.get("canonical_artist") or "").strip(),
                 "canonical_artist_id": str(body.get("canonical_artist_id") or "").strip(),
-                "query_type": str(body.get("query_type") or "artist"),
                 "count": int(body.get("count") or 0),
                 "tag_format": str(body.get("tag_format") or "comma"),
                 "tagger": tagger_cfg,
                 "tag_merge_mode": _normalize_tag_merge_mode(
                     body.get("tag_merge_mode"), tagger_cfg),
             }
+            cfg.update(common)
             runs.append({"source": source, "cfg": cfg, "skip": True,
                          "skip_reason": str(merged.get("skip_reason") or "未配置认证或画师映射，已跳过")})
             continue
@@ -1102,7 +1180,11 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(cfg, str):
                 self.send_json({"ok": False, "error": cfg}, 400)
                 return
-            cfg["query_type"] = str(body.get("query_type") or "artist")
+            query_type = str(body.get("query_type") or "artist").strip().lower()
+            if query_type not in QUERY_TYPES:
+                self.send_json({"ok": False, "error": "搜索类型不合法"}, 400)
+                return
+            cfg["query_type"] = query_type
             try:
                 artists = source.search_artists(query, cfg, limit=12)
                 for artist in artists:

@@ -2,5 +2,5 @@
 
 # Local WD14 / ONNX image tagging
 numpy>=1.26,<3
-Pillow>=10,<12
+Pillow>=10,<13
 onnxruntime>=1.18,<2

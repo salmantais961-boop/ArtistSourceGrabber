@@ -9,7 +9,7 @@ Moebooru:
 """
 import urllib.parse
 
-from .base import Source, Post
+from .base import Source, Post, normalize_search_tags
 from http_util import http_request, describe_error
 
 
@@ -73,6 +73,11 @@ class MoebooruSource(Source):
 
     def resolve_artist(self, cfg, logger):
         raw = cfg["artist"].strip()
+        if cfg.get("query_type", "artist") != "artist":
+            query = normalize_search_tags(raw)
+            if not query:
+                raise RuntimeError("请至少填写一个有效标签")
+            return query
         return raw.replace(" ", "_")
 
     def search_artists(self, query, cfg, limit=10):

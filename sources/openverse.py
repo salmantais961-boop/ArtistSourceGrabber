@@ -9,7 +9,7 @@ marked as low-confidence and should be confirmed by their source profile.
 import os
 import urllib.parse
 
-from .base import Post, Source
+from .base import Post, Source, normalize_search_tags
 from http_util import describe_error, http_request
 
 
@@ -66,7 +66,7 @@ class OpenverseSource(Source):
 
     def _params(self, creator, page, cfg, page_size=None):
         params = {"page": page, "page_size": page_size or self.PAGE_LIMIT}
-        if cfg.get("query_type") == "artist":
+        if cfg.get("query_type", "artist") == "artist":
             params["creator"] = creator
         else:
             params["q"] = creator
@@ -91,7 +91,10 @@ class OpenverseSource(Source):
             return False, describe_error(exc)
 
     def resolve_artist(self, cfg, logger):
-        return cfg["artist"].strip()
+        raw = cfg["artist"].strip()
+        if cfg.get("query_type", "artist") != "artist":
+            return normalize_search_tags(raw)
+        return raw
 
     def search_artists(self, query, cfg, limit=10):
         data = self._api({"q": query, "page_size": self.PAGE_LIMIT}, cfg)
