@@ -77,10 +77,10 @@
 
 ## 下载与完整性
 
-请从 GitHub Releases 下载 V2 压缩包：
+请从 GitHub Releases 下载最新的 V2.1.0 压缩包：
 
 ```text
-ArtistSourceGrabber-V2.zip
+ArtistSourceGrabber-V2.1.0.zip
 ```
 
 请以对应 GitHub Release 页面列出的 SHA-256 为准，不要从不明网盘、群文件转存或第三方镜像下载带有登录功能的修改版。

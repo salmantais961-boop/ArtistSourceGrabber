@@ -1,6 +1,20 @@
 # Artist Source Grabber V2
 
-V2 主要更新：
+## v2.1.0（2026-07-25）
+
+本次 Release 基于已合并到 `main` 的 V2.x 更新：
+
+- 透明图片可选自动铺设用户指定的纯色底，并在作品卡片显示处理状态；
+- 新增起始页 / 结束页抓取范围限制；
+- 新增 Danbooru 角色、通用标签和多 Tag AND 搜索；
+- 优化 LLM 证据优先提示词，降低幻觉、冲突和重复标签；
+- WD14 支持通用阈值、角色阈值和 CUDA 优先 / CPU 回退；
+- 合并 [buxinzi2233](https://github.com/buxinzi2233/ArtistSourceGrabber) 的 Linux 与角色/标签搜索贡献；
+- README 新增贡献致谢、功能导航和界面预览。
+
+下载文件：`ArtistSourceGrabber-V2.1.0.zip`
+
+## v2.0.0 主要更新
 
 - 全面重做现代简约 WebUI；
 - 图片按真实宽高比展示；
@@ -12,7 +26,7 @@ V2 主要更新：
 
 ## 安装
 
-1. 下载并解压 `ArtistSourceGrabber-V2.zip`。
+1. 下载并解压 `ArtistSourceGrabber-V2.1.0.zip`。
 2. 先运行 `先运行这个.bat`。
 3. 安装完成后运行 `start.bat`。
 4. 浏览器打开本机 WebUI 后再配置来源、登录和打标器。
@@ -29,7 +43,7 @@ V2 主要更新：
 
 ## 文件校验
 
-`ArtistSourceGrabber-V2.zip`
+`ArtistSourceGrabber-V2.1.0.zip`
 
 ```text
 SHA-256: AC222C06A79471A9316B61DE6E3787D4E8E15D8B582504BDDB14632F788E20E7
