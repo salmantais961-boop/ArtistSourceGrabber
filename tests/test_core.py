@@ -1,9 +1,28 @@
 # -*- coding: utf-8 -*-
+import os
+import tempfile
 import unittest
+from unittest import mock
 
 import app
 from sources import SOURCES
 from sources.danbooru import DanbooruSource
+
+
+class DownloadHtmlGuardTests(unittest.TestCase):
+    def test_download_rejects_html_masquerading_as_media(self):
+        resp = mock.MagicMock()
+        resp.headers = {"Content-Type": "text/html; charset=UTF-8"}
+        resp.read.side_effect = [b"<!DOCTYPE html><html></html>", b""]
+        resp.__enter__.return_value = resp
+        opener = mock.Mock()
+        opener.open.return_value = resp
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = os.path.join(tmpdir, "post.jpg")
+            with mock.patch.object(app, "build_opener", return_value=opener):
+                with self.assertRaisesRegex(RuntimeError, "网页"):
+                    app._download("https://img.example/x.jpg", target, {"proxy": ""})
+            self.assertEqual(os.listdir(tmpdir), [])
 
 
 class CoreTests(unittest.TestCase):

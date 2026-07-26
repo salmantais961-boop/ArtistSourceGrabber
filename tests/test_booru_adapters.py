@@ -43,9 +43,24 @@ class GelbooruAdapterTests(unittest.TestCase):
 
         self.assertEqual(request.call_count, 2)
 
+    def test_normalize_post_repairs_double_slash_and_sets_hotlink_headers(self):
+        source = GelbooruSource()
+        post = source._normalize_post({
+            "id": 10210536,
+            "file_url": "https://img4.gelbooru.com//images/18/53/abc.jpeg",
+            "sample_url": "https://img4.gelbooru.com//samples/18/53/sample_abc.jpg",
+            "owner": "someone",
+        })
+        self.assertEqual(
+            post["file_url"], "https://img4.gelbooru.com/images/18/53/abc.jpeg")
+        self.assertEqual(
+            post["large_url"], "https://img4.gelbooru.com/samples/18/53/sample_abc.jpg")
+        self.assertIn("id=10210536", post["extra_headers"]["Referer"])
+        self.assertIn("Mozilla/", post["extra_headers"]["User-Agent"])
+
     def test_count_limit_is_a_query_parameter_not_a_tag(self):
         cases = (
-            (GelbooruSource(), GELBOORU_CFG, "artist:kantoku"),
+            (GelbooruSource(), GELBOORU_CFG, "kantoku"),
             (SafebooruSource(), PUBLIC_CFG, "kantoku"),
         )
         for source, cfg, expected_tags in cases:
