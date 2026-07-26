@@ -62,7 +62,11 @@ class PixivBrowserSession(XBrowserSession):
     def __init__(
             self, profile_dir: str = "", browser: str = "chrome",
             executable: str = "", timeout: float = DEFAULT_TIMEOUT):
-        local = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+        if os.name == "nt":
+            local = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+        else:
+            local = os.environ.get("XDG_DATA_HOME") or os.path.join(
+                os.path.expanduser("~"), ".local", "share")
         app_dir = os.path.join(local, "DanbooruGrabber")
         dedicated = profile_dir or os.path.join(app_dir, "PixivBrowserProfile")
         try:
@@ -433,10 +437,12 @@ def _launch_browser(
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
     try:
+        # 独立进程组:X 模块 _kill_process_tree 的 killpg 才不会波及应用自身(POSIX;Windows 忽略)
         return subprocess.Popen(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, close_fds=True,
-            creationflags=creationflags, startupinfo=startupinfo)
+            creationflags=creationflags, startupinfo=startupinfo,
+            start_new_session=True)
     except OSError:
         raise PixivBrowserSessionError(
             "无法启动专用 Pixiv 浏览器", "launch_failed") from None
