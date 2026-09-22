@@ -17,6 +17,23 @@ class XBrowserSessionTests(unittest.TestCase):
         self.assertTrue(normalized.endswith("DanbooruGrabber/XBrowserProfile"))
         self.assertNotIn("Google/Chrome/User Data", normalized)
 
+    def test_find_browser_falls_back_to_chromium_when_chrome_missing(self):
+        chromium = os.path.abspath("/usr/bin/chromium")
+        with mock.patch.object(
+                x_browser_session.os.path, "isfile",
+                side_effect=lambda path: path == "/usr/bin/chromium"), \
+                mock.patch.object(x_browser_session.shutil, "which", return_value=""):
+            executable = x_browser_session._find_browser_executable("chrome")
+        self.assertEqual(executable, chromium)
+
+    def test_find_browser_error_includes_install_hint(self):
+        with mock.patch.object(x_browser_session.os.path, "isfile", return_value=False), \
+                mock.patch.object(x_browser_session.shutil, "which", return_value=""):
+            with self.assertRaises(XBrowserSessionError) as ctx:
+                x_browser_session._find_browser_executable("chrome")
+        self.assertEqual(ctx.exception.code, "executable_not_found")
+        self.assertIn("Chromium", str(ctx.exception))
+
     @mock.patch.object(x_browser_session, "_wait_for_endpoint",
                        return_value="ws://127.0.0.1:9222/devtools/browser/managed-id")
     @mock.patch.object(x_browser_session, "_launch_visible_browser")

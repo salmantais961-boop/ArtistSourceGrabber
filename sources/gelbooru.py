@@ -9,6 +9,7 @@ Gelbooru artist 接口不公开 JSON 端点传统搜索,改用 dapi 的 artist �
   /index.php?page=dapi&s=artist&q=index&json=1&name=...
 返回 {"artist":[...]}. 注意 Safebooru 同源接口。
 """
+import re
 import urllib.parse
 import xml.etree.ElementTree as ET
 
@@ -17,6 +18,21 @@ from http_util import http_request, describe_error
 
 
 PAGE_LIMIT = 100
+
+# 图片 CDN 会把非浏览器请求头/畸形路径 302 到 hotlink.php,返回 HTML 帖子页
+DOWNLOAD_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+
+def _normalize_file_url(url):
+    """dapi 返回的 file_url 可能在主机名后带双斜杠(//images/...),
+    该畸形路径会触发防盗链跳转,压平路径中的重复斜杠。"""
+    if not url:
+        return url
+    parts = urllib.parse.urlsplit(str(url))
+    path = re.sub(r"/{2,}", "/", parts.path)
+    return urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, path, parts.query, parts.fragment))
 
 
 class GelbooruLikeSource(Source):
@@ -128,16 +144,13 @@ class GelbooruLikeSource(Source):
             if not query:
                 raise RuntimeError("请至少填写一个有效标签")
             return query
-        # Gelbooru 画师通常以 "<artist_name>" 形式存在于 tag 中,等价于 "artist:<name>"
-        # 用户输入名称即可,无需数字 ID
+        # Gelbooru 画师本身就是普通 tag,用户输入名称即可,无需数字 ID
         return raw.replace(" ", "_")
 
     @staticmethod
     def _build_search(artist_key, cfg):
-        if cfg.get("query_type", "artist") == "artist":
-            search = "artist:%s" % artist_key
-        else:
-            search = artist_key
+        # dapi 不支持 "artist:" 元标签(拼上会恒得 0 结果),画师与普通 tag 同样搜索
+        search = artist_key
         if cfg.get("rating"):
             search += " rating:%s" % cfg["rating"]
         return search
@@ -228,20 +241,26 @@ class GelbooruLikeSource(Source):
         return out
 
     def _normalize_post(self, item):
-        url = item.get("file_url") or item.get("sample_url") or item.get("preview_url")
+        url = _normalize_file_url(
+            item.get("file_url") or item.get("sample_url") or item.get("preview_url"))
         ext = ""
         if url:
             ext = url.rsplit(".", 1)[-1].lower().split("?")[0]
         is_video = ext in ("mp4", "webm", "zip", "gif")
+        pid = str(item.get("id"))
         # Gelbooru 的 owner / source / tags
         return Post(
-            id=str(item.get("id")),
+            id=pid,
             ext=ext,
             file_url=url,
-            large_url=item.get("sample_url"),
+            large_url=_normalize_file_url(item.get("sample_url")),
             is_video=is_video,
             artist=item.get("owner", ""),
             raw=item,
+            extra_headers={
+                "User-Agent": DOWNLOAD_UA,
+                "Referer": "%s/index.php?page=post&s=view&id=%s" % (self.api_base, pid),
+            },
         )
 
     def build_caption(self, post, cfg):

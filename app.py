@@ -383,6 +383,14 @@ def _merge_caption_file(path, tags, tag_format):
     _write_text_atomic(path, _format_tags(merged, tag_format))
 
 
+def _reject_html_payload(resp, chunk):
+    """防盗链/登录墙常以 200 + HTML 页响应文件请求,落盘就是损坏的"黑图"。"""
+    ctype = str(getattr(resp, "headers", {}).get("Content-Type") or "").lower()
+    head = chunk.lstrip()[:9].lower()
+    if "text/html" in ctype or head.startswith((b"<!doctype", b"<html")):
+        raise RuntimeError("站点对文件请求返回了网页而非文件（疑似防盗链/登录墙拦截）")
+
+
 def _download(url, path, cfg, headers=None):
     request_headers = {"User-Agent": "MultiSourceArtistGrabber/2.0"}
     request_headers.update(headers or {})
@@ -390,10 +398,14 @@ def _download(url, path, cfg, headers=None):
     tmp = path + ".part"
     try:
         with build_opener(cfg.get("proxy")).open(req, timeout=180) as resp, open(tmp, "wb") as fh:
+            checked = False
             while True:
                 chunk = resp.read(256 * 1024)
                 if not chunk:
                     break
+                if not checked:
+                    checked = True
+                    _reject_html_payload(resp, chunk)
                 fh.write(chunk)
         os.replace(tmp, path)
     except Exception:

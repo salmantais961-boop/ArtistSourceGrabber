@@ -464,10 +464,18 @@ def _find_browser_executable(browser: str) -> str:
             linux_chromium or "",
         ),
     }
+    # 请求的浏览器族缺失时按此顺序回退,Linux 上默认 "chrome" 也能命中发行版的 chromium
+    fallback = ("chrome", "chromium", "edge", "brave")
+    search_order = (name,) + tuple(item for item in fallback if item != name)
     executable = next(
-        (os.path.abspath(path) for path in candidates[name] if path and os.path.isfile(path)), "")
+        (os.path.abspath(path)
+         for family in search_order
+         for path in candidates[family]
+         if path and os.path.isfile(path)), "")
     if not executable:
-        raise XBrowserSessionError("未找到可用于专用 X 会话的浏览器", "executable_not_found")
+        raise XBrowserSessionError(
+            "未找到可用于专用 X 会话的浏览器（已尝试 Chrome/Chromium/Edge/Brave），"
+            "请安装 Google Chrome 或 Chromium 后重试", "executable_not_found")
     return executable
 
 
@@ -485,9 +493,11 @@ def _launch_visible_browser(executable: str, profile_dir: str, port: int, url: s
         url,
     ]
     try:
+        # 独立进程组:_kill_process_tree 的 killpg 才不会波及应用自身(POSIX;Windows 忽略)
         return subprocess.Popen(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, close_fds=True)
+            stderr=subprocess.DEVNULL, close_fds=True,
+            start_new_session=True)
     except OSError:
         raise XBrowserSessionError("无法启动专用 X 浏览器", "launch_failed") from None
 
@@ -518,10 +528,12 @@ def _launch_headless_browser(executable: str, profile_dir: str, port: int, url: 
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
     try:
+        # 独立进程组:同 _launch_visible_browser,防止 killpg 命中应用自身进程组
         return subprocess.Popen(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, close_fds=True,
-            creationflags=creationflags, startupinfo=startupinfo)
+            creationflags=creationflags, startupinfo=startupinfo,
+            start_new_session=True)
     except OSError:
         raise XBrowserSessionError("无法启动 X 后台浏览器", "launch_failed") from None
 
